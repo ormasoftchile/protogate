@@ -1,5 +1,6 @@
 #include "tcp_proxy.h"
 #include "../observability/logger.h"
+#include "../security/ip_allowlist.h"
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
 #include <random>
@@ -28,6 +29,42 @@ void TCPProxy::create_connection(
         return;
     }
     
+    // Get tunnel configuration
+    auto tunnel = tunnel_cache_->get(tunnel_id);
+    if (!tunnel) {
+        callback(false, "Tunnel configuration not found");
+        return;
+    }
+    
+    // Get client IP address
+    std::string client_ip;
+    try {
+        auto remote_endpoint = client_socket->remote_endpoint();
+        client_ip = remote_endpoint.address().to_string();
+    } catch (const std::exception& e) {
+        observability::Logger::instance().error("Failed to get client IP", {
+            {"error", e.what()}
+        });
+        callback(false, "Failed to get client address");
+        return;
+    }
+    
+    // Validate IP allowlist
+    if (!validate_ip_allowlist(*tunnel, client_ip)) {
+        observability::Logger::instance().warning("TCP connection blocked by IP allowlist", {
+            {"tunnel_id", tunnel_id},
+            {"client_ip", client_ip},
+            {"target_port", std::to_string(target_port)}
+        });
+        
+        callback(false, "IP address not allowed");
+        
+        // Close socket
+        boost::system::error_code close_ec;
+        client_socket->close(close_ec);
+        return;
+    }
+    
     // Check if agent is connected
     if (!agent_registry_->is_connected(tunnel_id)) {
         callback(false, "Agent not connected for tunnel " + tunnel_id);
@@ -38,6 +75,7 @@ void TCPProxy::create_connection(
     auto connection = std::make_shared<TCPConnection>();
     connection->connection_id = generate_connection_id();
     connection->tunnel_id = tunnel_id;
+    connection->client_ip = client_ip;
     connection->target_port = target_port;
     connection->state = ConnectionState::CONNECTING;
     connection->started_at = std::chrono::steady_clock::now();
@@ -56,6 +94,7 @@ void TCPProxy::create_connection(
     observability::Logger::instance().info("TCP connection created", {
         {"connection_id", connection->connection_id},
         {"tunnel_id", tunnel_id},
+        {"client_ip", client_ip},
         {"target_port", std::to_string(target_port)}
     });
     
@@ -73,6 +112,64 @@ void TCPProxy::create_connection(
     const std::string& tunnel_id,
     std::shared_ptr<tcp_socket> client_socket,
     std::function<void(const std::string& connection_id, const boost::system::error_code& ec)> close_callback) {
+    
+    // Get tunnel configuration
+    auto tunnel = tunnel_cache_->get(tunnel_id);
+    if (!tunnel) {
+        observability::Logger::instance().error("Tunnel configuration not found", {
+            {"tunnel_id", tunnel_id}
+        });
+        
+        boost::system::error_code ec = boost::asio::error::not_found;
+        if (close_callback) {
+            close_callback("", ec);
+        }
+        
+        // Close socket
+        boost::system::error_code close_ec;
+        client_socket->close(close_ec);
+        return;
+    }
+    
+    // Get client IP address
+    std::string client_ip;
+    try {
+        auto remote_endpoint = client_socket->remote_endpoint();
+        client_ip = remote_endpoint.address().to_string();
+    } catch (const std::exception& e) {
+        observability::Logger::instance().error("Failed to get client IP", {
+            {"tunnel_id", tunnel_id},
+            {"error", e.what()}
+        });
+        
+        boost::system::error_code ec = boost::asio::error::fault;
+        if (close_callback) {
+            close_callback("", ec);
+        }
+        
+        // Close socket
+        boost::system::error_code close_ec;
+        client_socket->close(close_ec);
+        return;
+    }
+    
+    // Validate IP allowlist
+    if (!validate_ip_allowlist(*tunnel, client_ip)) {
+        observability::Logger::instance().warning("TCP connection blocked by IP allowlist", {
+            {"tunnel_id", tunnel_id},
+            {"client_ip", client_ip}
+        });
+        
+        boost::system::error_code ec = boost::asio::error::access_denied;
+        if (close_callback) {
+            close_callback("", ec);
+        }
+        
+        // Close socket
+        boost::system::error_code close_ec;
+        client_socket->close(close_ec);
+        return;
+    }
     
     // Check if agent is connected
     if (!agent_registry_->is_connected(tunnel_id)) {
@@ -95,6 +192,7 @@ void TCPProxy::create_connection(
     auto connection = std::make_shared<TCPConnection>();
     connection->connection_id = generate_connection_id();
     connection->tunnel_id = tunnel_id;
+    connection->client_ip = client_ip;
     connection->target_port = 0;  // Port is determined by server-side routing
     connection->state = ConnectionState::CONNECTING;
     connection->started_at = std::chrono::steady_clock::now();
@@ -112,7 +210,8 @@ void TCPProxy::create_connection(
     
     observability::Logger::instance().info("TCP connection created", {
         {"connection_id", connection->connection_id},
-        {"tunnel_id", tunnel_id}
+        {"tunnel_id", tunnel_id},
+        {"client_ip", client_ip}
     });
     
     // TODO: Send CONNECT frame to agent via protocol_multiplexer
@@ -430,6 +529,26 @@ std::string TCPProxy::generate_connection_id() {
     }
     
     return ss.str();
+}
+
+bool TCPProxy::validate_ip_allowlist(const models::Tunnel& tunnel, const std::string& client_ip) {
+    // If no allowlist configured, allow all
+    if (tunnel.ip_allowlist.empty()) {
+        return true;
+    }
+    
+    // Create IPAllowlist from tunnel's CIDR list
+    auto allowlist_opt = security::IPAllowlist::from_cidr_list(tunnel.ip_allowlist);
+    if (!allowlist_opt) {
+        // Failed to parse allowlist - log error and deny access
+        observability::Logger::instance().error("Failed to parse IP allowlist for TCP", {
+            {"tunnel_id", tunnel.tunnel_id}
+        });
+        return false;
+    }
+    
+    // Check if client IP is allowed
+    return allowlist_opt->is_allowed(client_ip);
 }
 
 }  // namespace proxy

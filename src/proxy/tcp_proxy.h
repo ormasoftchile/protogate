@@ -45,6 +45,7 @@ public:
     struct TCPConnection {
         std::string connection_id;      // Unique connection identifier
         std::string tunnel_id;          // Associated tunnel
+        std::string client_ip;          // Client source IP address
         uint16_t target_port;           // Target port on agent side
         ConnectionState state;
         
@@ -214,6 +215,14 @@ private:
      * @return UUID string
      */
     std::string generate_connection_id();
+    
+    /**
+     * @brief Validate client IP against tunnel's allowlist
+     * @param tunnel Tunnel configuration
+     * @param client_ip Client IP address
+     * @return True if allowed, false if blocked
+     */
+    bool validate_ip_allowlist(const models::Tunnel& tunnel, const std::string& client_ip);
 };
 
 }  // namespace proxy
