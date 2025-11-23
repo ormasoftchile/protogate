@@ -65,16 +65,16 @@
 
 ### Implementation Tasks
 
-- [ ] T022 [P] [US1] Create src/security/tls_manager.h/cpp - TLS context initialization, certificate loading from Key Vault
-- [ ] T023 [P] [US1] Create src/security/token_validator.h/cpp - SHA-256 token validation against cache
-- [ ] T024 [US1] Create src/storage/keyvault_client.h/cpp - Azure Key Vault SDK wrapper for certificates and secrets
-- [ ] T025 [US1] Implement src/agent/agent_connection.h/cpp - manages single agent TLS connection, HTTP/2 session, heartbeat
-- [ ] T026 [US1] Implement src/agent/agent_registry.h/cpp - thread-safe registry of active agents (std::unordered_map + std::shared_mutex)
-- [ ] T027 [US1] Implement src/proxy/protocol_multiplexer.h/cpp - HTTP/2 stream management via nghttp2 callbacks
-- [ ] T028 [US1] Implement src/proxy/http_proxy.h/cpp - HTTP request parsing, header forwarding, response streaming
-- [ ] T029 [US1] Implement src/server/http_server.h/cpp - accepts HTTPS connections on port 443, SNI routing
-- [ ] T030 [US1] Implement src/server/agent_server.h/cpp - accepts agent TLS connections on port 8443, handshake handling
-- [ ] T031 [US1] Create src/server/main.cpp - main entry point, config loading, server startup, signal handling
+- [X] T022 [P] [US1] Create src/security/tls_manager.h/cpp - TLS context initialization, certificate loading from Key Vault
+- [X] T023 [P] [US1] Create src/security/token_validator.h/cpp - SHA-256 token validation against cache
+- [X] T024 [US1] Create src/storage/keyvault_client.h/cpp - Azure Key Vault SDK wrapper for certificates and secrets
+- [X] T025 [US1] Implement src/agent/agent_connection.h/cpp - manages single agent TLS connection, HTTP/2 session, heartbeat
+- [X] T026 [US1] Implement src/agent/agent_registry.h/cpp - thread-safe registry of active agents (std::unordered_map + std::shared_mutex)
+- [X] T027 [US1] Implement src/proxy/protocol_multiplexer.h/cpp - HTTP/2 stream management via nghttp2 callbacks
+- [X] T028 [US1] Implement src/proxy/http_proxy.h/cpp - HTTP request parsing, header forwarding, response streaming
+- [X] T029 [US1] Implement src/server/http_server.h/cpp - accepts HTTPS connections on port 443, SNI routing
+- [X] T030 [US1] Implement src/server/agent_server.h/cpp - accepts agent TLS connections on port 8443, handshake handling
+- [X] T031 [US1] Create src/server/main.cpp - main entry point, config loading, server startup, signal handling
 - [ ] T032 [US1] Add HTTP request routing logic in http_proxy.cpp - match hostname to tunnel_id, lookup agent, forward request
 - [ ] T033 [US1] Add connection timeout handling in agent_connection.cpp - 30-minute request timeout, configurable
 
