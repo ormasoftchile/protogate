@@ -206,6 +206,175 @@ int ProtocolMultiplexer::on_header_callback(
     return 0;
 }
 
+// ===== TCP Tunnel Protocol Implementation =====
+
+std::vector<uint8_t> ProtocolMultiplexer::TCPFrame::serialize() const {
+    std::vector<uint8_t> result;
+    
+    // Frame type (1 byte)
+    result.push_back(static_cast<uint8_t>(type));
+    
+    // Connection ID length (2 bytes, big-endian)
+    uint16_t conn_id_len = static_cast<uint16_t>(connection_id.size());
+    result.push_back((conn_id_len >> 8) & 0xFF);
+    result.push_back(conn_id_len & 0xFF);
+    
+    // Connection ID
+    result.insert(result.end(), connection_id.begin(), connection_id.end());
+    
+    // Payload length (4 bytes, big-endian)
+    uint32_t payload_len = static_cast<uint32_t>(payload.size());
+    result.push_back((payload_len >> 24) & 0xFF);
+    result.push_back((payload_len >> 16) & 0xFF);
+    result.push_back((payload_len >> 8) & 0xFF);
+    result.push_back(payload_len & 0xFF);
+    
+    // Payload
+    result.insert(result.end(), payload.begin(), payload.end());
+    
+    return result;
+}
+
+ProtocolMultiplexer::TCPFrame ProtocolMultiplexer::TCPFrame::deserialize(
+    const uint8_t* data, size_t length) {
+    
+    TCPFrame frame;
+    
+    if (length < 7) {  // Minimum frame size: type(1) + conn_id_len(2) + payload_len(4)
+        throw std::runtime_error("Invalid TCP frame: too short");
+    }
+    
+    size_t offset = 0;
+    
+    // Parse type
+    frame.type = static_cast<TCPFrameType>(data[offset++]);
+    
+    // Parse connection ID length
+    uint16_t conn_id_len = (static_cast<uint16_t>(data[offset]) << 8) |
+                           static_cast<uint16_t>(data[offset + 1]);
+    offset += 2;
+    
+    if (offset + conn_id_len + 4 > length) {
+        throw std::runtime_error("Invalid TCP frame: truncated connection ID");
+    }
+    
+    // Parse connection ID
+    frame.connection_id = std::string(
+        reinterpret_cast<const char*>(data + offset),
+        conn_id_len);
+    offset += conn_id_len;
+    
+    // Parse payload length
+    uint32_t payload_len = (static_cast<uint32_t>(data[offset]) << 24) |
+                          (static_cast<uint32_t>(data[offset + 1]) << 16) |
+                          (static_cast<uint32_t>(data[offset + 2]) << 8) |
+                          static_cast<uint32_t>(data[offset + 3]);
+    offset += 4;
+    
+    if (offset + payload_len > length) {
+        throw std::runtime_error("Invalid TCP frame: truncated payload");
+    }
+    
+    // Parse payload
+    frame.payload.assign(data + offset, data + offset + payload_len);
+    
+    return frame;
+}
+
+bool ProtocolMultiplexer::send_tcp_data(
+    const std::string& connection_id,
+    const uint8_t* data,
+    size_t length) {
+    
+    TCPFrame frame;
+    frame.type = TCPFrameType::TCP_DATA;
+    frame.connection_id = connection_id;
+    frame.payload.assign(data, data + length);
+    
+    auto serialized = frame.serialize();
+    output_buffer_.append(
+        reinterpret_cast<const char*>(serialized.data()),
+        serialized.size());
+    
+    observability::Logger::instance().debug("TCP_DATA frame queued", {
+        {"connection_id", connection_id},
+        {"bytes", std::to_string(length)}
+    });
+    
+    return true;
+}
+
+bool ProtocolMultiplexer::send_tcp_close(const std::string& connection_id) {
+    TCPFrame frame;
+    frame.type = TCPFrameType::TCP_CLOSE;
+    frame.connection_id = connection_id;
+    
+    auto serialized = frame.serialize();
+    output_buffer_.append(
+        reinterpret_cast<const char*>(serialized.data()),
+        serialized.size());
+    
+    observability::Logger::instance().debug("TCP_CLOSE frame queued", {
+        {"connection_id", connection_id}
+    });
+    
+    return true;
+}
+
+bool ProtocolMultiplexer::send_tcp_error(
+    const std::string& connection_id,
+    const std::string& error_message) {
+    
+    TCPFrame frame;
+    frame.type = TCPFrameType::TCP_ERROR;
+    frame.connection_id = connection_id;
+    frame.payload.assign(error_message.begin(), error_message.end());
+    
+    auto serialized = frame.serialize();
+    output_buffer_.append(
+        reinterpret_cast<const char*>(serialized.data()),
+        serialized.size());
+    
+    observability::Logger::instance().debug("TCP_ERROR frame queued", {
+        {"connection_id", connection_id},
+        {"error", error_message}
+    });
+    
+    return true;
+}
+
+bool ProtocolMultiplexer::send_tcp_window(
+    const std::string& connection_id,
+    uint32_t window_size) {
+    
+    TCPFrame frame;
+    frame.type = TCPFrameType::TCP_WINDOW;
+    frame.connection_id = connection_id;
+    
+    // Encode window size as 4 bytes
+    frame.payload.resize(4);
+    frame.payload[0] = (window_size >> 24) & 0xFF;
+    frame.payload[1] = (window_size >> 16) & 0xFF;
+    frame.payload[2] = (window_size >> 8) & 0xFF;
+    frame.payload[3] = window_size & 0xFF;
+    
+    auto serialized = frame.serialize();
+    output_buffer_.append(
+        reinterpret_cast<const char*>(serialized.data()),
+        serialized.size());
+    
+    observability::Logger::instance().debug("TCP_WINDOW frame queued", {
+        {"connection_id", connection_id},
+        {"window_size", std::to_string(window_size)}
+    });
+    
+    return true;
+}
+
+void ProtocolMultiplexer::set_tcp_frame_callback(tcp_frame_callback callback) {
+    tcp_frame_callback_ = std::move(callback);
+}
+
 }  // namespace proxy
 }  // namespace protogate
 

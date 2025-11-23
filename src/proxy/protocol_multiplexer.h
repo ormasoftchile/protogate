@@ -128,6 +128,76 @@ public:
      * @brief Check if session wants to receive data
      */
     bool wants_read() const;
+    
+    // ===== TCP Tunnel Protocol =====
+    
+    /**
+     * @brief TCP frame types for raw TCP tunneling
+     */
+    enum class TCPFrameType : uint8_t {
+        TCP_DATA = 0x01,      // Raw TCP data payload
+        TCP_CLOSE = 0x02,     // Connection close request
+        TCP_ERROR = 0x03,     // Error notification
+        TCP_WINDOW = 0x04     // Flow control window update
+    };
+    
+    /**
+     * @brief TCP frame header structure
+     * Format: [type:1][connection_id_len:2][connection_id:N][payload_len:4][payload:N]
+     */
+    struct TCPFrame {
+        TCPFrameType type;
+        std::string connection_id;
+        std::vector<uint8_t> payload;
+        
+        // Serialize frame to binary
+        std::vector<uint8_t> serialize() const;
+        
+        // Deserialize frame from binary
+        static TCPFrame deserialize(const uint8_t* data, size_t length);
+    };
+    
+    /**
+     * @brief Send TCP data frame
+     * @param connection_id TCP connection identifier
+     * @param data Raw bytes to send
+     * @param length Data length
+     * @return true if frame queued
+     */
+    bool send_tcp_data(const std::string& connection_id,
+                       const uint8_t* data,
+                       size_t length);
+    
+    /**
+     * @brief Send TCP close frame
+     * @param connection_id TCP connection identifier
+     * @return true if frame queued
+     */
+    bool send_tcp_close(const std::string& connection_id);
+    
+    /**
+     * @brief Send TCP error frame
+     * @param connection_id TCP connection identifier
+     * @param error_message Error description
+     * @return true if frame queued
+     */
+    bool send_tcp_error(const std::string& connection_id,
+                        const std::string& error_message);
+    
+    /**
+     * @brief Send TCP window update frame
+     * @param connection_id TCP connection identifier
+     * @param window_size New window size in bytes
+     * @return true if frame queued
+     */
+    bool send_tcp_window(const std::string& connection_id,
+                         uint32_t window_size);
+    
+    /**
+     * @brief Set callback for received TCP frames
+     */
+    using tcp_frame_callback = std::function<void(const TCPFrame& frame)>;
+    void set_tcp_frame_callback(tcp_frame_callback callback);
 
 private:
     /**
@@ -155,6 +225,7 @@ private:
     std::string output_buffer_;
     stream_header_callback header_callback_;
     stream_data_callback data_callback_;
+    tcp_frame_callback tcp_frame_callback_;
     
     // Current stream being processed
     [[maybe_unused]] int32_t current_stream_id_;  // TODO: Will be used for stream tracking in full HTTP/2 implementation
