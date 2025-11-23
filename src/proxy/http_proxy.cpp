@@ -1,5 +1,6 @@
 #include "http_proxy.h"
 #include "../observability/logger.h"
+#include "../security/ip_allowlist.h"
 #include <sstream>
 #include <algorithm>
 
@@ -138,24 +139,18 @@ bool HTTPProxy::validate_ip_allowlist(const models::Tunnel& tunnel, const std::s
         return true;
     }
     
-    // TODO: Implement CIDR matching
-    // For now, check for exact IP match
-    for (const auto& allowed_cidr : tunnel.ip_allowlist) {
-        if (allowed_cidr == client_ip) {
-            return true;
-        }
-        
-        // Basic /32 check
-        size_t slash_pos = allowed_cidr.find("/32");
-        if (slash_pos != std::string::npos) {
-            std::string ip = allowed_cidr.substr(0, slash_pos);
-            if (ip == client_ip) {
-                return true;
-            }
-        }
+    // Create IPAllowlist from tunnel's CIDR list
+    auto allowlist_opt = security::IPAllowlist::from_cidr_list(tunnel.ip_allowlist);
+    if (!allowlist_opt) {
+        // Failed to parse allowlist - log error and deny access
+        observability::Logger::instance().error("Failed to parse IP allowlist", {
+            {"tunnel_id", tunnel.tunnel_id}
+        });
+        return false;
     }
     
-    return false;
+    // Check if client IP is allowed
+    return allowlist_opt->is_allowed(client_ip);
 }
 
 void HTTPProxy::route_to_agent(
