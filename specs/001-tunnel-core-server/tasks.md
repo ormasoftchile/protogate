@@ -209,18 +209,18 @@
 ### Implementation Tasks
 
 - [X] T080 [P] [US6] Implement Azure Log Analytics client in logger.cpp - batch log upload via REST API
-- [ ] T081 [P] [US6] Implement Azure Monitor metrics export in metrics.cpp - custom metrics via REST API
+- [X] T081 [P] [US6] Implement Azure Monitor metrics export in metrics.cpp - custom metrics via REST API
 - [X] T082 [US6] Create /health endpoint in src/server/health_handler.cpp - return 200 OK with status JSON
 - [ ] T083 [US6] Add OpenTelemetry tracing support in src/observability/tracer.h/cpp - distributed tracing spans
-- [ ] T084 [US6] Implement GET /api/v1/tunnels/{id}/metrics endpoint in tunnels_handler.cpp - return request counts, latency percentiles
-- [ ] T085 [US6] Implement GET /api/v1/tunnels/{id}/agents endpoint in tunnels_handler.cpp - list active agent connections
+- [X] T084 [US6] Implement GET /api/v1/tunnels/{id}/metrics endpoint in tunnels_handler.cpp - return request counts, latency percentiles
+- [X] T085 [US6] Implement GET /api/v1/tunnels/{id}/agents endpoint in tunnels_handler.cpp - list active agent connections
 - [X] T086 [US6] Add latency histogram tracking in tunnel_request.cpp - p50, p95, p99 calculations
 
 ### Testing Tasks
 
 - [ ] T087 [US6] Create tests/integration/observability_test.cpp - verify logs sent to Log Analytics, metrics exported
-- [ ] T088 [P] [US6] Create tests/integration/health_check_test.cpp - /health returns 200 when healthy, 503 when degraded
-- [ ] T089 [P] [US6] Create tests/unit/metrics_test.cpp - histogram calculations, percentile accuracy
+- [X] T088 [P] [US6] Create tests/integration/health_check_test.cpp - /health returns 200 when healthy, 503 when degraded
+- [X] T089 [P] [US6] Create tests/unit/metrics_test.cpp - histogram calculations, percentile accuracy
 
 **Checkpoint**: ✅ User Story 6 complete - Full observability stack operational
 
