@@ -183,7 +183,7 @@ TLSManager::ssl_context_ptr TLSManager::create_context(
 }
 
 void TLSManager::configure_tls_options(ssl_context& ctx) {
-    // Enforce TLS 1.2+ (disable TLS 1.0/1.1)
+    // Enforce TLS 1.2+ minimum version (disable TLS 1.0/1.1 and older)
     ctx.set_options(
         ssl_context::default_workarounds |
         ssl_context::no_sslv2 |
@@ -193,13 +193,21 @@ void TLSManager::configure_tls_options(ssl_context& ctx) {
         ssl_context::single_dh_use
     );
     
-    // Set cipher suite (strong ciphers only)
+    // Set minimum TLS version explicitly (TLS 1.2)
+    SSL_CTX_set_min_proto_version(ctx.native_handle(), TLS1_2_VERSION);
+    
+    // Set cipher suite (strong ciphers only - ECDHE for forward secrecy, AES-GCM for AEAD)
     SSL_CTX_set_cipher_list(ctx.native_handle(), 
         "ECDHE-ECDSA-AES256-GCM-SHA384:"
         "ECDHE-RSA-AES256-GCM-SHA384:"
         "ECDHE-ECDSA-AES128-GCM-SHA256:"
         "ECDHE-RSA-AES128-GCM-SHA256"
     );
+    
+    observability::Logger::instance().debug("TLS options configured", {
+        {"min_version", "TLS 1.2"},
+        {"cipher_suites", "ECDHE-ECDSA/RSA-AES-GCM"}
+    });
 }
 
 std::string TLSManager::match_certificate(const std::string& hostname) const {
