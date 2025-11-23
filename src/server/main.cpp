@@ -2,6 +2,15 @@
 #include "utils/errors.h"
 #include "observability/logger.h"
 #include "server/io_context_pool.h"
+#include "server/http_server.h"
+#include "server/agent_server.h"
+#include "security/tls_manager.h"
+#include "security/token_validator.h"
+#include "agent/agent_registry.h"
+#include "proxy/http_proxy.h"
+#include "storage/cache.h"
+#include "models/tunnel.h"
+#include "models/auth_token.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>
@@ -47,13 +56,58 @@ int main(int argc, char* argv[]) {
             {"thread_count", std::to_string(io_pool.size())}
         });
         
-        // TODO: Initialize server components
-        // - TLS manager
-        // - Token validator
-        // - Agent registry
-        // - HTTP server
-        // - Agent server
-        // - TCP server (if configured)
+        // Initialize caches
+        auto tunnel_cache = std::make_shared<storage::Cache<std::string, models::Tunnel>>();
+        auto token_cache = std::make_shared<storage::Cache<std::string, models::AuthToken>>();
+        
+        LOG_INFO("Caches initialized");
+        
+        // Initialize TLS manager
+        auto tls_manager = std::make_shared<security::TLSManager>(config.key_vault_uri);
+        
+        LOG_INFO("TLS manager initialized", {
+            {"key_vault_uri", config.key_vault_uri}
+        });
+        
+        // Initialize token validator
+        auto token_validator = std::make_shared<security::TokenValidator>(token_cache);
+        
+        LOG_INFO("Token validator initialized");
+        
+        // Initialize agent registry
+        auto agent_registry = std::make_shared<agent::AgentRegistry>(50);
+        
+        LOG_INFO("Agent registry initialized");
+        
+        // Initialize HTTP proxy
+        auto http_proxy = std::make_shared<proxy::HTTPProxy>(tunnel_cache, agent_registry);
+        
+        LOG_INFO("HTTP proxy initialized");
+        
+        // Create servers
+        auto http_server = std::make_shared<server::HTTPServer>(
+            std::make_shared<server::IOContextPool>(io_pool),
+            tls_manager,
+            http_proxy,
+            config.port);
+        
+        auto agent_server = std::make_shared<server::AgentServer>(
+            std::make_shared<server::IOContextPool>(io_pool),
+            tls_manager,
+            token_validator,
+            agent_registry,
+            config.agent_port);
+        
+        LOG_INFO("Servers created");
+        
+        // Start servers
+        http_server->start();
+        agent_server->start();
+        
+        LOG_INFO("Servers started", {
+            {"http_port", std::to_string(config.port)},
+            {"agent_port", std::to_string(config.agent_port)}
+        });
         
         // Start IO pool
         io_pool.start();
@@ -70,6 +124,9 @@ int main(int argc, char* argv[]) {
         LOG_INFO("Shutdown signal received, stopping server");
         
         // Graceful shutdown
+        http_server->stop();
+        agent_server->stop();
+        agent_registry->shutdown();
         io_pool.stop();
         
         LOG_INFO("Protogate server stopped");
