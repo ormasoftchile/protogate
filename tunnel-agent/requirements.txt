@@ -1,0 +1,24 @@
+# Tunnel Agent Dependencies
+
+# HTTP/2 Protocol
+h2==4.1.0
+hyper-h2==4.1.0
+
+# HTTP Client
+httpx==0.25.2
+
+# Configuration
+pyyaml==6.0.1
+
+# CLI Framework
+click==8.1.7
+
+# Async I/O (included in Python 3.7+, listed for reference)
+# asyncio
+
+# Development Dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+black==23.12.1
+mypy==1.7.1

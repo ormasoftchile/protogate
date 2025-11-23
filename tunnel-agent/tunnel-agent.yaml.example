@@ -1,0 +1,34 @@
+# Protogate Tunnel Agent Configuration
+# Copy to tunnel-agent.yaml and configure
+
+# Server connection settings
+server:
+  host: tunnel-agent.mycorp.com
+  port: 8443
+  verify_tls: true  # Set to false for self-signed certs (dev only)
+
+# Tunnel configuration
+tunnel:
+  id: api  # Tunnel ID from Management API
+  token: tnl_abc123...  # Bearer token from Management API
+
+# Local service settings
+local:
+  url: http://localhost:3000  # Local service to tunnel
+  timeout: 1800  # Request timeout in seconds (30 minutes)
+
+# Health monitoring
+health:
+  heartbeat_interval: 30  # Send heartbeat every N seconds
+  heartbeat_timeout: 60   # Close connection if no ACK within N seconds
+
+# Reconnection settings
+reconnect:
+  initial_delay: 1   # Initial retry delay in seconds
+  max_delay: 60      # Maximum retry delay in seconds
+  max_attempts: 0    # Maximum retry attempts (0 = infinite)
+
+# Logging
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  format: json # json or text
