@@ -64,6 +64,7 @@ private:
     public:
         Connection(boost::asio::io_context& io_context,
                   boost::asio::ssl::context& ssl_context,
+                  std::shared_ptr<security::TLSManager> tls_manager,
                   std::shared_ptr<proxy::HTTPProxy> http_proxy);
 
         auto& socket() { return socket_.lowest_layer(); }
@@ -75,12 +76,20 @@ private:
         void do_read();
         void do_write(const std::string& response);
         void handle_error(const boost::system::error_code& ec);
+        
+        /**
+         * @brief SNI callback for certificate selection
+         * @return SSL_TLSEXT_ERR_OK on success
+         */
+        static int sni_callback(SSL* ssl, int* al, void* arg);
 
         boost::asio::ssl::stream<boost::asio::ip::tcp::socket> socket_;
+        std::shared_ptr<security::TLSManager> tls_manager_;
         std::shared_ptr<proxy::HTTPProxy> http_proxy_;
         std::array<char, 8192> buffer_;
         std::string request_buffer_;
         std::string client_ip_;
+        std::string sni_hostname_;
     };
 
     std::shared_ptr<IOContextPool> io_pool_;

@@ -1,5 +1,6 @@
 #include "http_server.h"
 #include "../observability/logger.h"
+#include <openssl/ssl.h>
 
 namespace protogate {
 namespace server {
@@ -69,7 +70,7 @@ void HTTPServer::do_accept() {
     auto& io_context = io_pool_->get_io_context();
     auto ssl_context = tls_manager_->get_client_context();
     
-    auto conn = std::make_shared<Connection>(io_context, *ssl_context, http_proxy_);
+    auto conn = std::make_shared<Connection>(io_context, *ssl_context, tls_manager_, http_proxy_);
     
     acceptor_.async_accept(conn->socket(),
         [this, conn](const boost::system::error_code& ec) {
@@ -91,9 +92,15 @@ void HTTPServer::do_accept() {
 HTTPServer::Connection::Connection(
     boost::asio::io_context& io_context,
     boost::asio::ssl::context& ssl_context,
+    std::shared_ptr<security::TLSManager> tls_manager,
     std::shared_ptr<proxy::HTTPProxy> http_proxy)
     : socket_(io_context, ssl_context),
+      tls_manager_(tls_manager),
       http_proxy_(http_proxy) {
+    
+    // Register SNI callback for dynamic certificate selection
+    SSL_CTX_set_tlsext_servername_callback(ssl_context.native_handle(), sni_callback);
+    SSL_CTX_set_tlsext_servername_arg(ssl_context.native_handle(), this);
 }
 
 void HTTPServer::Connection::start() {
@@ -214,6 +221,49 @@ void HTTPServer::Connection::handle_error(const boost::system::error_code& ec) {
             {"error", ec.message()}
         });
     }
+}
+
+int HTTPServer::Connection::sni_callback(SSL* ssl, int* al, void* arg) {
+    (void)al; // Unused
+    
+    Connection* conn = static_cast<Connection*>(arg);
+    if (!conn || !conn->tls_manager_) {
+        return SSL_TLSEXT_ERR_NOACK;
+    }
+    
+    // Get SNI hostname from client
+    const char* servername = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    if (!servername) {
+        // No SNI provided, use default certificate
+        observability::Logger::instance().debug("No SNI hostname provided, using default certificate");
+        return SSL_TLSEXT_ERR_OK;
+    }
+    
+    std::string hostname(servername);
+    conn->sni_hostname_ = hostname;
+    
+    observability::Logger::instance().debug("SNI hostname", {
+        {"hostname", hostname}
+    });
+    
+    // Get certificate for this hostname
+    auto ssl_context = conn->tls_manager_->get_client_context(hostname);
+    if (!ssl_context) {
+        observability::Logger::instance().warning("Failed to get SSL context for SNI hostname", {
+            {"hostname", hostname}
+        });
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
+    
+    // Update SSL context for this connection
+    SSL_CTX* new_ctx = ssl_context->native_handle();
+    SSL_set_SSL_CTX(ssl, new_ctx);
+    
+    observability::Logger::instance().info("SNI certificate selected", {
+        {"hostname", hostname}
+    });
+    
+    return SSL_TLSEXT_ERR_OK;
 }
 
 }  // namespace server
