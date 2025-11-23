@@ -3,6 +3,7 @@
 
 #include "tunnels_handler.h"
 #include "../observability/logger.h"
+#include "../observability/metrics.h"
 #include "../security/token_validator.h"
 #include <nlohmann/json.hpp>
 #include <random>
@@ -276,18 +277,55 @@ void TunnelsHandler::handle_get_tunnel_metrics(const HttpRequest& request, HttpR
         return;
     }
     
-    // TODO: Implement actual metrics collection
-    json metrics;
-    metrics["tunnel_id"] = tunnel_id;
-    metrics["request_count"] = 0;
-    metrics["bytes_sent"] = 0;
-    metrics["bytes_received"] = 0;
-    metrics["active_connections"] = 0;
-    metrics["latency_p50_ms"] = 0;
-    metrics["latency_p95_ms"] = 0;
-    metrics["latency_p99_ms"] = 0;
+    // Get metrics from the global Metrics singleton
+    auto& metrics = observability::Metrics::instance();
+    auto conn_stats = metrics.get_connection_stats();
+    auto throughput_stats = metrics.get_throughput_stats();
+    auto http_latency = metrics.get_latency_stats("http_request");
+    auto tcp_latency = metrics.get_latency_stats("tcp_connection");
     
-    response.set_json(metrics.dump());
+    // Calculate error rate
+    double error_rate = 0.0;
+    if (conn_stats.total_http_requests > 0) {
+        error_rate = (static_cast<double>(conn_stats.http_errors) / conn_stats.total_http_requests) * 100.0;
+    }
+    
+    // Build response JSON
+    json metrics_json;
+    metrics_json["tunnel_id"] = tunnel_id;
+    metrics_json["connections"] = {
+        {"active_http_connections", conn_stats.active_http_connections},
+        {"active_tcp_connections", conn_stats.active_tcp_connections},
+        {"total_http_requests", conn_stats.total_http_requests},
+        {"total_tcp_connections", conn_stats.total_tcp_connections},
+        {"http_errors", conn_stats.http_errors},
+        {"tcp_errors", conn_stats.tcp_errors}
+    };
+    metrics_json["throughput"] = {
+        {"bytes_sent", throughput_stats.bytes_sent},
+        {"bytes_received", throughput_stats.bytes_received},
+        {"total_bytes", throughput_stats.total_bytes},
+        {"bytes_per_second", throughput_stats.bytes_per_second}
+    };
+    metrics_json["latency"] = {
+        {"http_request", {
+            {"p50_ms", http_latency.p50_ms},
+            {"p95_ms", http_latency.p95_ms},
+            {"p99_ms", http_latency.p99_ms},
+            {"mean_ms", http_latency.mean_ms},
+            {"max_ms", http_latency.max_ms}
+        }},
+        {"tcp_connection", {
+            {"p50_ms", tcp_latency.p50_ms},
+            {"p95_ms", tcp_latency.p95_ms},
+            {"p99_ms", tcp_latency.p99_ms},
+            {"mean_ms", tcp_latency.mean_ms},
+            {"max_ms", tcp_latency.max_ms}
+        }}
+    };
+    metrics_json["error_rate_percent"] = error_rate;
+    
+    response.set_json(metrics_json.dump(2));
 }
 
 void TunnelsHandler::handle_get_tunnel_agents(const HttpRequest& request, HttpResponse& response) {
