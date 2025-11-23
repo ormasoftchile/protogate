@@ -8,7 +8,7 @@
 
 **Tests**: Not explicitly requested in specification, but constitution requires 80% code coverage. Test tasks included for quality assurance.
 
-**Progress**: 94/110 tasks complete (85.5%)
+**Progress**: 96/110 tasks complete (87.3%)
 - Phase 1 (Setup): 8/8 (100%)
 - Phase 2 (Foundation): 17/17 (100%)
 - Phase 3 (US1): 10/10 (100%)
@@ -17,7 +17,7 @@
 - Phase 6 (US3): 11/11 (100%)
 - Phase 7 (US5): 10/10 (100%)
 - Phase 8 (US6): 8/10 (80%)
-- Phase 9 (Polish): 11/21 (52%)
+- Phase 9 (Polish): 13/21 (62%)
 
 ---
 
@@ -249,8 +249,8 @@
 - [X] T095 Create deploy/azure/parameters.json - deployment parameters template
 - [X] T096 Create deploy/scripts/deploy.sh - automated deployment script with az CLI
 - [X] T097 [P] Create deploy/scripts/generate-token.sh - utility for manual token generation
-- [ ] T098 Create docs/architecture.md - high-level architecture diagram with C4 model
-- [ ] T099 [P] Create docs/security.md - threat model, security controls, incident response
+- [X] T098 Create docs/architecture.md - high-level architecture diagram with C4 model
+- [X] T099 [P] Create docs/security.md - threat model, security controls, incident response
 - [ ] T100 [P] Create docs/adr/001-async-io-library.md - ADR for Boost.Asio choice
 - [ ] T101 [P] Create docs/adr/002-tls-library-choice.md - ADR for OpenSSL choice
 - [ ] T102 [P] Create docs/adr/003-storage-strategy.md - ADR for in-memory + Blob backup
