@@ -183,18 +183,18 @@
 
 ### Implementation Tasks
 
-- [ ] T071 [P] [US5] Create src/security/ip_allowlist.h/cpp - CIDR parsing, IP matching logic
-- [ ] T072 [US5] Add IP filtering in http_proxy.cpp - check source IP against tunnel's allowlist before forwarding
-- [ ] T073 [US5] Add IP filtering in tcp_proxy.cpp - check source IP for TCP connections
-- [ ] T074 [US5] Add rate limiting in src/security/rate_limiter.h/cpp - token bucket algorithm per tunnel
-- [ ] T075 [US5] Implement 403 Forbidden response in http_server.cpp when IP blocked
-- [ ] T076 [US5] Add security audit logging in audit_event.cpp - log IP allowlist violations with source IP
+- [X] T071 [P] [US5] Create src/security/ip_allowlist.h/cpp - CIDR parsing, IP matching logic
+- [X] T072 [US5] Add IP filtering in http_proxy.cpp - check source IP against tunnel's allowlist before forwarding
+- [X] T073 [US5] Add IP filtering in tcp_proxy.cpp - check source IP for TCP connections
+- [X] T074 [US5] Add rate limiting in src/security/rate_limiter.h/cpp - token bucket algorithm per tunnel
+- [X] T075 [US5] Implement 403 Forbidden response in http_server.cpp when IP blocked
+- [X] T076 [US5] Add security audit logging in audit_event.cpp - log IP allowlist violations with source IP
 
 ### Testing Tasks
 
-- [ ] T077 [US5] Create tests/integration/ip_allowlist_test.cpp - allowed IP passes, blocked IP denied
-- [ ] T078 [P] [US5] Create tests/integration/rate_limit_test.cpp - exceed limit, verify 429 Too Many Requests
-- [ ] T079 [P] [US5] Create tests/unit/ip_allowlist_test.cpp - CIDR parsing, IP match logic (IPv4 and IPv6)
+- [X] T077 [US5] Create tests/integration/ip_allowlist_test.cpp - allowed IP passes, blocked IP denied
+- [X] T078 [P] [US5] Create tests/integration/rate_limit_test.cpp - exceed limit, verify 429 Too Many Requests
+- [X] T079 [P] [US5] Create tests/unit/ip_allowlist_test.cpp - CIDR parsing, IP match logic (IPv4 and IPv6)
 
 **Checkpoint**: ✅ User Story 5 complete - IP allowlisting and rate limiting operational
 
@@ -208,13 +208,13 @@
 
 ### Implementation Tasks
 
-- [ ] T080 [P] [US6] Implement Azure Log Analytics client in logger.cpp - batch log upload via REST API
+- [X] T080 [P] [US6] Implement Azure Log Analytics client in logger.cpp - batch log upload via REST API
 - [ ] T081 [P] [US6] Implement Azure Monitor metrics export in metrics.cpp - custom metrics via REST API
-- [ ] T082 [US6] Create /health endpoint in src/server/health_handler.cpp - return 200 OK with status JSON
+- [X] T082 [US6] Create /health endpoint in src/server/health_handler.cpp - return 200 OK with status JSON
 - [ ] T083 [US6] Add OpenTelemetry tracing support in src/observability/tracer.h/cpp - distributed tracing spans
 - [ ] T084 [US6] Implement GET /api/v1/tunnels/{id}/metrics endpoint in tunnels_handler.cpp - return request counts, latency percentiles
 - [ ] T085 [US6] Implement GET /api/v1/tunnels/{id}/agents endpoint in tunnels_handler.cpp - list active agent connections
-- [ ] T086 [US6] Add latency histogram tracking in tunnel_request.cpp - p50, p95, p99 calculations
+- [X] T086 [US6] Add latency histogram tracking in tunnel_request.cpp - p50, p95, p99 calculations
 
 ### Testing Tasks
 
