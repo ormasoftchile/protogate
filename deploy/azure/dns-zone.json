@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "18018536367384720285"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "global",
+      "metadata": {
+        "description": "Location for the DNS Zone (global)"
+      }
+    },
+    "dnsDomainName": {
+      "type": "string",
+      "metadata": {
+        "description": "DNS domain name (e.g., example.com)"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/dnsZones",
+      "apiVersion": "2018-05-01",
+      "name": "[parameters('dnsDomainName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "zoneType": "Public"
+      }
+    }
+  ],
+  "outputs": {
+    "dnsZoneName": {
+      "type": "string",
+      "metadata": {
+        "description": "DNS Zone name"
+      },
+      "value": "[parameters('dnsDomainName')]"
+    },
+    "nameServers": {
+      "type": "array",
+      "metadata": {
+        "description": "DNS Zone name servers"
+      },
+      "value": "[reference(resourceId('Microsoft.Network/dnsZones', parameters('dnsDomainName')), '2018-05-01').nameServers]"
+    },
+    "dnsZoneId": {
+      "type": "string",
+      "metadata": {
+        "description": "DNS Zone resource ID"
+      },
+      "value": "[resourceId('Microsoft.Network/dnsZones', parameters('dnsDomainName'))]"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "18189169396546916474"
+    }
+  },
+  "parameters": {
+    "dnsZoneName": {
+      "type": "string",
+      "metadata": {
+        "description": "DNS Zone name"
+      }
+    },
+    "containerAppFqdn": {
+      "type": "string",
+      "metadata": {
+        "description": "Container App FQDN to extract IP from"
+      }
+    },
+    "ttl": {
+      "type": "int",
+      "defaultValue": 3600,
+      "metadata": {
+        "description": "TTL for the DNS record"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/dnsZones/CNAME",
+      "apiVersion": "2018-05-01",
+      "name": "[format('{0}/*', parameters('dnsZoneName'))]",
+      "properties": {
+        "TTL": "[parameters('ttl')]",
+        "CNAMERecord": {
+          "cname": "[parameters('containerAppFqdn')]"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "wildcardFqdn": {
+      "type": "string",
+      "metadata": {
+        "description": "Wildcard record FQDN"
+      },
+      "value": "[reference(resourceId('Microsoft.Network/dnsZones/CNAME', split(format('{0}/*', parameters('dnsZoneName')), '/')[0], split(format('{0}/*', parameters('dnsZoneName')), '/')[1]), '2018-05-01').fqdn]"
+    }
+  }
+}

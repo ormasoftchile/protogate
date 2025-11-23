@@ -1,0 +1,249 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "8932047840871834187"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for the Container App"
+      }
+    },
+    "containerAppName": {
+      "type": "string",
+      "metadata": {
+        "description": "Container App name"
+      }
+    },
+    "environmentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Container Apps Environment name"
+      }
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "metadata": {
+        "description": "Log Analytics workspace ID"
+      }
+    },
+    "logAnalyticsWorkspaceKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Log Analytics workspace key"
+      }
+    },
+    "keyVaultUri": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault URI"
+      }
+    },
+    "containerImage": {
+      "type": "string",
+      "metadata": {
+        "description": "Container image and tag"
+      }
+    },
+    "containerRegistryServer": {
+      "type": "string",
+      "metadata": {
+        "description": "Container registry server"
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 0,
+      "maxValue": 10,
+      "metadata": {
+        "description": "Minimum replica count"
+      }
+    },
+    "maxReplicas": {
+      "type": "int",
+      "defaultValue": 10,
+      "minValue": 1,
+      "maxValue": 30,
+      "metadata": {
+        "description": "Maximum replica count"
+      }
+    },
+    "cpu": {
+      "type": "string",
+      "defaultValue": "0.5",
+      "metadata": {
+        "description": "CPU allocation"
+      }
+    },
+    "memory": {
+      "type": "string",
+      "defaultValue": "1Gi",
+      "metadata": {
+        "description": "Memory allocation"
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('environmentName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(parameters('logAnalyticsWorkspaceId'), '2022-10-01').customerId]",
+            "sharedKey": "[parameters('logAnalyticsWorkspaceKey')]"
+          }
+        },
+        "zoneRedundant": false
+      }
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[format('{0}-identity', parameters('containerAppName'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]"
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('containerAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerAppName'))))]": {}
+        }
+      },
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 443,
+            "transport": "auto",
+            "allowInsecure": false,
+            "exposedPort": 8443,
+            "traffic": [
+              {
+                "latestRevision": true,
+                "weight": 100
+              }
+            ]
+          },
+          "registries": [
+            {
+              "server": "[parameters('containerRegistryServer')]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerAppName')))]"
+            }
+          ],
+          "secrets": []
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "protogate-server",
+              "image": "[parameters('containerImage')]",
+              "resources": {
+                "cpu": "[json(parameters('cpu'))]",
+                "memory": "[parameters('memory')]"
+              },
+              "env": [
+                {
+                  "name": "KEYVAULT_URI",
+                  "value": "[parameters('keyVaultUri')]"
+                },
+                {
+                  "name": "LOG_ANALYTICS_WORKSPACE_ID",
+                  "value": "[reference(parameters('logAnalyticsWorkspaceId'), '2022-10-01').customerId]"
+                },
+                {
+                  "name": "AZURE_CLIENT_ID",
+                  "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerAppName'))), '2023-01-31').clientId]"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": "[parameters('minReplicas')]",
+            "maxReplicas": "[parameters('maxReplicas')]",
+            "rules": [
+              {
+                "name": "cpu-scaling",
+                "custom": {
+                  "type": "cpu",
+                  "metadata": {
+                    "type": "Utilization",
+                    "value": "70"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerAppName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "fqdn": {
+      "type": "string",
+      "metadata": {
+        "description": "Container App FQDN"
+      },
+      "value": "[reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2023-05-01').configuration.ingress.fqdn]"
+    },
+    "name": {
+      "type": "string",
+      "metadata": {
+        "description": "Container App name"
+      },
+      "value": "[parameters('containerAppName')]"
+    },
+    "managedIdentityPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Managed Identity Principal ID"
+      },
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerAppName'))), '2023-01-31').principalId]"
+    },
+    "managedIdentityClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Managed Identity Client ID"
+      },
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity', parameters('containerAppName'))), '2023-01-31').clientId]"
+    },
+    "environmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Container Apps Environment ID"
+      },
+      "value": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]"
+    }
+  }
+}

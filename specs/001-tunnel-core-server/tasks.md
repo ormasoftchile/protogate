@@ -8,7 +8,7 @@
 
 **Tests**: Not explicitly requested in specification, but constitution requires 80% code coverage. Test tasks included for quality assurance.
 
-**Progress**: 91/110 tasks complete (82.7%)
+**Progress**: 94/110 tasks complete (85.5%)
 - Phase 1 (Setup): 8/8 (100%)
 - Phase 2 (Foundation): 17/17 (100%)
 - Phase 3 (US1): 10/10 (100%)
@@ -17,7 +17,7 @@
 - Phase 6 (US3): 11/11 (100%)
 - Phase 7 (US5): 10/10 (100%)
 - Phase 8 (US6): 8/10 (80%)
-- Phase 9 (Polish): 8/21 (38%)
+- Phase 9 (Polish): 11/21 (52%)
 
 ---
 
@@ -246,9 +246,9 @@
 - [X] T092 [P] Create deploy/azure/keyvault.bicep - Key Vault with access policies
 - [X] T093 [P] Create deploy/azure/dns-zone.bicep - DNS Zone with wildcard A record
 - [X] T094 [P] Create deploy/azure/log-analytics.bicep - Log Analytics workspace
-- [ ] T095 Create deploy/azure/parameters.json - deployment parameters template
-- [ ] T096 Create deploy/scripts/deploy.sh - automated deployment script with az CLI
-- [ ] T097 [P] Create deploy/scripts/generate-token.sh - utility for manual token generation
+- [X] T095 Create deploy/azure/parameters.json - deployment parameters template
+- [X] T096 Create deploy/scripts/deploy.sh - automated deployment script with az CLI
+- [X] T097 [P] Create deploy/scripts/generate-token.sh - utility for manual token generation
 - [ ] T098 Create docs/architecture.md - high-level architecture diagram with C4 model
 - [ ] T099 [P] Create docs/security.md - threat model, security controls, incident response
 - [ ] T100 [P] Create docs/adr/001-async-io-library.md - ADR for Boost.Asio choice

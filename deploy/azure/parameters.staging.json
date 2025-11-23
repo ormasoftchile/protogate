@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "eastus"
+    },
+    "environment": {
+      "value": "staging"
+    },
+    "baseName": {
+      "value": "protogate"
+    },
+    "dnsDomainName": {
+      "value": "tunnel-staging.example.com"
+    },
+    "imageTag": {
+      "value": "staging"
+    },
+    "minReplicas": {
+      "value": 1
+    },
+    "maxReplicas": {
+      "value": 5
+    },
+    "cpu": {
+      "value": "0.5"
+    },
+    "memory": {
+      "value": "1Gi"
+    }
+  }
+}
