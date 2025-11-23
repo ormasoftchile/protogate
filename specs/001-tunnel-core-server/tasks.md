@@ -8,6 +8,17 @@
 
 **Tests**: Not explicitly requested in specification, but constitution requires 80% code coverage. Test tasks included for quality assurance.
 
+**Progress**: 91/110 tasks complete (82.7%)
+- Phase 1 (Setup): 8/8 (100%)
+- Phase 2 (Foundation): 17/17 (100%)
+- Phase 3 (US1): 10/10 (100%)
+- Phase 4 (US2): 10/10 (100%)
+- Phase 5 (US4): 9/9 (100%)
+- Phase 6 (US3): 11/11 (100%)
+- Phase 7 (US5): 10/10 (100%)
+- Phase 8 (US6): 8/10 (80%)
+- Phase 9 (Polish): 8/21 (38%)
+
 ---
 
 ## Task Format: `- [ ] [ID] [P?] [Story?] Description with file path`
@@ -230,11 +241,11 @@
 
 **Purpose**: Deployment automation, documentation, security hardening, production readiness
 
-- [ ] T090 Create deploy/azure/main.bicep - root Bicep template with all resources
-- [ ] T091 [P] Create deploy/azure/container-app.bicep - Container Apps resource definition
-- [ ] T092 [P] Create deploy/azure/keyvault.bicep - Key Vault with access policies
-- [ ] T093 [P] Create deploy/azure/dns-zone.bicep - DNS Zone with wildcard A record
-- [ ] T094 [P] Create deploy/azure/log-analytics.bicep - Log Analytics workspace
+- [X] T090 Create deploy/azure/main.bicep - root Bicep template with all resources
+- [X] T091 [P] Create deploy/azure/container-app.bicep - Container Apps resource definition
+- [X] T092 [P] Create deploy/azure/keyvault.bicep - Key Vault with access policies
+- [X] T093 [P] Create deploy/azure/dns-zone.bicep - DNS Zone with wildcard A record
+- [X] T094 [P] Create deploy/azure/log-analytics.bicep - Log Analytics workspace
 - [ ] T095 Create deploy/azure/parameters.json - deployment parameters template
 - [ ] T096 Create deploy/scripts/deploy.sh - automated deployment script with az CLI
 - [ ] T097 [P] Create deploy/scripts/generate-token.sh - utility for manual token generation
