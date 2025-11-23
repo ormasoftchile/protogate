@@ -40,7 +40,9 @@ if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 
 # Find required packages
-find_package(Boost REQUIRED COMPONENTS system thread)
+# Boost 1.89+ no longer requires component specification for header-only libs
+find_package(Boost 1.70 REQUIRED)
+find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
@@ -74,12 +76,11 @@ list(FILTER PROTOGATE_SOURCES EXCLUDE REGEX ".*main\\.cpp$")
 # Create library for shared code
 add_library(protogate_lib STATIC ${PROTOGATE_SOURCES})
 target_link_libraries(protogate_lib PUBLIC
-    Boost::system
-    Boost::thread
+    Boost::boost
+    Threads::Threads
     OpenSSL::SSL
     OpenSSL::Crypto
     nlohmann_json::nlohmann_json
-    pthread
 )
 
 # Main executable

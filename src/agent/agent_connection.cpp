@@ -237,12 +237,18 @@ void AgentConnection::update_stats(size_t bytes_sent, size_t bytes_received) {
 
 models::TunnelAgent AgentConnection::get_metadata() const {
     models::TunnelAgent agent;
+    agent.agent_id = ""; // TODO: Generate UUID
     agent.tunnel_id = tunnel_id_;
-    agent.connection_id = ""; // TODO: Generate UUID
-    agent.connected_at = std::chrono::system_clock::to_time_t(connected_at_);
+    agent.remote_ip = ""; // TODO: Extract from socket
+    agent.remote_port = 0;
+    agent.state = (state_ == State::CONNECTED) 
+        ? models::AgentConnectionState::CONNECTED 
+        : models::AgentConnectionState::DISCONNECTED;
+    agent.connected_at = connected_at_;
+    agent.last_heartbeat = std::chrono::system_clock::now(); // Convert from steady_clock
     agent.bytes_sent = bytes_sent_;
     agent.bytes_received = bytes_received_;
-    agent.status = (state_ == State::CONNECTED) ? "CONNECTED" : "DISCONNECTED";
+    agent.active_connections = 0; // TODO: Track active connections
     
     return agent;
 }

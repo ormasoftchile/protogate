@@ -4,6 +4,12 @@
 // Stub implementation for nghttp2 integration
 // TODO: Add nghttp2 library and implement full HTTP/2 protocol
 
+// Suppress unused private field warnings for stub implementation
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-private-field"
+#endif
+
 namespace protogate {
 namespace proxy {
 
@@ -202,3 +208,7 @@ int ProtocolMultiplexer::on_header_callback(
 
 }  // namespace proxy
 }  // namespace protogate
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif

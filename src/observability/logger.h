@@ -88,8 +88,10 @@ public:
      * @brief Flush any pending logs to Log Analytics
      */
     void flush();
-    
+
 private:
+    friend class std::default_delete<Logger>;
+    
     Logger();
     ~Logger();
     

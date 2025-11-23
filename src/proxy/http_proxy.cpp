@@ -113,17 +113,18 @@ std::optional<HTTPProxy::HTTPRequest> HTTPProxy::parse_request(const std::string
 }
 
 std::string HTTPProxy::match_tunnel(const std::string& hostname) {
-    // Try exact match first
+    // Try exact match first using tunnel_id as subdomain
     std::string matched_id;
     
     tunnel_cache_->for_each([&](const std::string& tunnel_id, const models::Tunnel& tunnel) {
-        // Check if tunnel subdomain matches hostname
-        // Tunnel subdomain: "api", hostname: "api.tunnel.example.com"
-        if (hostname.starts_with(tunnel.subdomain + ".")) {
+        // Check if tunnel_id matches hostname prefix
+        // Tunnel ID: "api", hostname: "api.tunnel.example.com"
+        std::string prefix = tunnel_id + ".";
+        if (hostname.compare(0, prefix.size(), prefix) == 0) {
             matched_id = tunnel_id;
         }
-        // Also check direct match (if subdomain is full hostname)
-        else if (tunnel.subdomain == hostname) {
+        // Also check direct match (if tunnel_id is full hostname)
+        else if (tunnel_id == hostname) {
             matched_id = tunnel_id;
         }
     });
@@ -133,20 +134,21 @@ std::string HTTPProxy::match_tunnel(const std::string& hostname) {
 
 bool HTTPProxy::validate_ip_allowlist(const models::Tunnel& tunnel, const std::string& client_ip) {
     // If no allowlist configured, allow all
-    if (tunnel.allowed_ips.empty()) {
+    if (tunnel.ip_allowlist.empty()) {
         return true;
     }
     
     // TODO: Implement CIDR matching
     // For now, check for exact IP match
-    for (const auto& allowed_cidr : tunnel.allowed_ips) {
+    for (const auto& allowed_cidr : tunnel.ip_allowlist) {
         if (allowed_cidr == client_ip) {
             return true;
         }
         
         // Basic /32 check
-        if (allowed_cidr.ends_with("/32")) {
-            std::string ip = allowed_cidr.substr(0, allowed_cidr.size() - 3);
+        size_t slash_pos = allowed_cidr.find("/32");
+        if (slash_pos != std::string::npos) {
+            std::string ip = allowed_cidr.substr(0, slash_pos);
             if (ip == client_ip) {
                 return true;
             }

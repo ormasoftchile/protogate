@@ -2,6 +2,7 @@
 #include "../observability/logger.h"
 #include "../storage/keyvault_client.h"
 #include <boost/asio/ssl/context.hpp>
+#include <shared_mutex>
 #include <algorithm>
 
 namespace protogate {
@@ -209,9 +210,11 @@ std::string TLSManager::match_certificate(const std::string& hostname) const {
     
     // Wildcard match (*.domain.com matches api.domain.com)
     for (const auto& [domain, _] : certificates_) {
-        if (domain.starts_with("*.")) {
+        if (domain.compare(0, 2, "*.") == 0) {
             std::string suffix = domain.substr(1); // Remove '*'
-            if (hostname.ends_with(suffix)) {
+            size_t suffix_len = suffix.length();
+            if (hostname.length() >= suffix_len && 
+                hostname.compare(hostname.length() - suffix_len, suffix_len, suffix) == 0) {
                 // Verify it's a subdomain match, not partial
                 size_t dot_pos = hostname.find('.');
                 if (dot_pos != std::string::npos && 
