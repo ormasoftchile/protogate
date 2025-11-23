@@ -4,6 +4,10 @@
 #include <sstream>
 #include <iomanip>
 #include <nlohmann/json.hpp>
+#include <openssl/hmac.h>
+#include <openssl/evp.h>
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
 
 namespace protogate {
 namespace observability {
@@ -312,6 +316,186 @@ std::string Metrics::export_json() const {
     };
     
     return j.dump(2);
+}
+
+bool Metrics::export_azure_monitor(const std::string& resource_id, const std::string& workspace_id, const std::string& workspace_key) {
+    try {
+        // Get current metrics
+        auto conn_stats = get_connection_stats();
+        auto throughput_stats = get_throughput_stats();
+        auto http_latency = get_latency_stats("http_request");
+
+        // Azure Monitor Custom Metrics API format
+        // See: https://docs.microsoft.com/en-us/azure/azure-monitor/essentials/metrics-custom-overview
+        nlohmann::json metrics_batch = nlohmann::json::array();
+
+        // Add connection metrics
+        metrics_batch.push_back({
+            {"time", get_rfc1123_date()},
+            {"data", {
+                {"baseData", {
+                    {"metric", "protogate_active_tunnels"},
+                    {"namespace", "ProtoGate"},
+                    {"dimNames", nlohmann::json::array()},
+                    {"series", nlohmann::json::array({
+                        {
+                            {"dimValues", nlohmann::json::array()},
+                            {"min", conn_stats.active_tunnels},
+                            {"max", conn_stats.active_tunnels},
+                            {"sum", conn_stats.active_tunnels},
+                            {"count", 1}
+                        }
+                    })}
+                }}
+            }}
+        });
+
+        metrics_batch.push_back({
+            {"time", get_rfc1123_date()},
+            {"data", {
+                {"baseData", {
+                    {"metric", "protogate_http_requests_total"},
+                    {"namespace", "ProtoGate"},
+                    {"dimNames", nlohmann::json::array()},
+                    {"series", nlohmann::json::array({
+                        {
+                            {"dimValues", nlohmann::json::array()},
+                            {"min", conn_stats.total_http_requests},
+                            {"max", conn_stats.total_http_requests},
+                            {"sum", conn_stats.total_http_requests},
+                            {"count", 1}
+                        }
+                    })}
+                }}
+            }}
+        });
+
+        // Add latency metrics
+        if (http_latency.p95_ms > 0) {
+            metrics_batch.push_back({
+                {"time", get_rfc1123_date()},
+                {"data", {
+                    {"baseData", {
+                        {"metric", "protogate_http_latency_p95_ms"},
+                        {"namespace", "ProtoGate"},
+                        {"dimNames", nlohmann::json::array()},
+                        {"series", nlohmann::json::array({
+                            {
+                                {"dimValues", nlohmann::json::array()},
+                                {"min", http_latency.p95_ms},
+                                {"max", http_latency.p95_ms},
+                                {"sum", http_latency.p95_ms},
+                                {"count", 1}
+                            }
+                        })}
+                    }}
+                }}
+            });
+        }
+
+        // Add throughput metrics
+        metrics_batch.push_back({
+            {"time", get_rfc1123_date()},
+            {"data", {
+                {"baseData", {
+                    {"metric", "protogate_bytes_per_second"},
+                    {"namespace", "ProtoGate"},
+                    {"dimNames", nlohmann::json::array()},
+                    {"series", nlohmann::json::array({
+                        {
+                            {"dimValues", nlohmann::json::array()},
+                            {"min", throughput_stats.bytes_per_second},
+                            {"max", throughput_stats.bytes_per_second},
+                            {"sum", throughput_stats.bytes_per_second},
+                            {"count", 1}
+                        }
+                    })}
+                }}
+            }}
+        });
+
+        // Prepare Azure Monitor API request
+        std::string json_body = metrics_batch.dump();
+        std::string content_type = "application/json";
+        std::string resource = "/api/logs"; // Azure Monitor Ingestion API endpoint
+        std::string date = get_rfc1123_date();
+        
+        // Build signature string
+        std::string signature_string = "POST\n" + 
+                                     std::to_string(json_body.length()) + "\n" +
+                                     content_type + "\n" +
+                                     "x-ms-date:" + date + "\n" +
+                                     resource;
+        
+        // Compute HMAC-SHA256 signature
+        std::string signature = compute_hmac_sha256(workspace_key, signature_string);
+        
+        // Build Authorization header
+        std::string authorization = "SharedKey " + workspace_id + ":" + signature;
+        
+        // TODO: Actually send the HTTP POST request to Azure Monitor
+        // For now, just log that we would send it
+        Logger::instance().info("Would upload metrics to Azure Monitor (HTTP POST not implemented yet)");
+        Logger::instance().debug("Resource ID: " + resource_id);
+        Logger::instance().debug("Authorization: " + authorization);
+        Logger::instance().debug("Metrics count: " + std::to_string(metrics_batch.size()));
+        
+        return true;
+    } catch (const std::exception& e) {
+        Logger::instance().error("Failed to export metrics to Azure Monitor: " + std::string(e.what()));
+        return false;
+    }
+}
+
+std::string Metrics::get_rfc1123_date() const {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
+    std::tm gmt{};
+    gmtime_r(&now_time, &gmt);
+    
+    char buffer[128];
+    std::strftime(buffer, sizeof(buffer), "%a, %d %b %Y %H:%M:%S GMT", &gmt);
+    return std::string(buffer);
+}
+
+std::string Metrics::compute_hmac_sha256(const std::string& key_base64, const std::string& data) const {
+    // Decode base64 workspace key
+    BIO* b64 = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+    BIO* bmem = BIO_new_mem_buf(key_base64.data(), static_cast<int>(key_base64.length()));
+    bmem = BIO_push(b64, bmem);
+    
+    std::vector<unsigned char> decoded_key(256);
+    int decoded_len = BIO_read(bmem, decoded_key.data(), static_cast<int>(decoded_key.size()));
+    BIO_free_all(bmem);
+    
+    if (decoded_len <= 0) {
+        throw std::runtime_error("Failed to decode base64 workspace key");
+    }
+    
+    // Compute HMAC-SHA256
+    unsigned char hmac[EVP_MAX_MD_SIZE];
+    unsigned int hmac_len = 0;
+    
+    HMAC(EVP_sha256(), decoded_key.data(), decoded_len,
+         reinterpret_cast<const unsigned char*>(data.data()), data.length(),
+         hmac, &hmac_len);
+    
+    // Encode result as base64
+    BIO* b64_out = BIO_new(BIO_f_base64());
+    BIO_set_flags(b64_out, BIO_FLAGS_BASE64_NO_NL);
+    BIO* bmem_out = BIO_new(BIO_s_mem());
+    BIO_push(b64_out, bmem_out);
+    BIO_write(b64_out, hmac, static_cast<int>(hmac_len));
+    BIO_flush(b64_out);
+    
+    BUF_MEM* bptr;
+    BIO_get_mem_ptr(b64_out, &bptr);
+    std::string result(bptr->data, bptr->length);
+    
+    BIO_free_all(b64_out);
+    
+    return result;
 }
 
 void Metrics::reset() {

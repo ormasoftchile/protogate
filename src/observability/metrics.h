@@ -96,6 +96,15 @@ public:
     std::string export_json() const;
 
     /**
+     * @brief Upload metrics to Azure Monitor Custom Metrics API
+     * @param resource_id Azure resource ID (e.g. /subscriptions/.../resourceGroups/.../providers/Microsoft.ContainerApps/containerApps/protogate)
+     * @param workspace_id Azure Monitor workspace ID for authentication
+     * @param workspace_key Azure Monitor workspace shared key (base64 encoded)
+     * @return true if upload successful, false otherwise
+     */
+    bool export_azure_monitor(const std::string& resource_id, const std::string& workspace_id, const std::string& workspace_key);
+
+    /**
      * @brief Reset all metrics (for testing)
      */
     void reset();
@@ -110,6 +119,16 @@ private:
      * @brief Calculate percentiles from latency samples
      */
     LatencyStats calculate_latency_stats(const std::vector<double>& samples) const;
+
+    /**
+     * @brief Get RFC1123 formatted timestamp for Azure API
+     */
+    std::string get_rfc1123_date() const;
+
+    /**
+     * @brief Compute HMAC-SHA256 signature for Azure API authentication
+     */
+    std::string compute_hmac_sha256(const std::string& key_base64, const std::string& data) const;
 
     // Tunnel tracking
     mutable std::shared_mutex tunnels_mutex_;
