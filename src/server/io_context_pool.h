@@ -49,7 +49,7 @@ public:
 
 private:
     std::vector<std::shared_ptr<boost::asio::io_context>> io_contexts_;
-    std::vector<std::shared_ptr<boost::asio::io_context::work>> work_guards_;
+    std::vector<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work_guards_;
     std::vector<std::thread> threads_;
     size_t next_io_context_ = 0;
 };

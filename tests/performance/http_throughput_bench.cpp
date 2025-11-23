@@ -16,11 +16,10 @@ static std::shared_ptr<proxy::HTTPProxy> create_http_proxy() {
     // Setup test tunnel
     models::Tunnel tunnel;
     tunnel.tunnel_id = "bench_api";
-    tunnel.subdomain = "api";
-    tunnel.protocol = "https";
+    tunnel.protocol = models::TunnelProtocol::HTTP;
     tunnel.target_host = "localhost";
     tunnel.target_port = 8080;
-    tunnel.status = "active";
+    tunnel.status = models::TunnelStatus::ACTIVE;
     
     tunnel_cache->put("bench_api", tunnel, std::chrono::hours(1));
     
@@ -135,7 +134,7 @@ static void BM_IPAllowlistValidation(benchmark::State& state) {
     
     models::Tunnel tunnel;
     tunnel.tunnel_id = "secure_api";
-    tunnel.allowed_ips = {"192.168.1.0/24", "10.0.0.0/8", "172.16.0.0/12"};
+    tunnel.ip_allowlist = {"192.168.1.0/24", "10.0.0.0/8", "172.16.0.0/12"};
     
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -181,7 +180,9 @@ static void BM_TunnelCacheLookup(benchmark::State& state) {
     for (int i = 0; i < state.range(0); ++i) {
         models::Tunnel tunnel;
         tunnel.tunnel_id = "tunnel_" + std::to_string(i);
-        tunnel.subdomain = "api" + std::to_string(i);
+        tunnel.protocol = models::TunnelProtocol::HTTP;
+        tunnel.target_host = "localhost";
+        tunnel.target_port = 8080;
         tunnel_cache->put(tunnel.tunnel_id, tunnel, std::chrono::hours(1));
     }
     

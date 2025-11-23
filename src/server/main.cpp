@@ -50,10 +50,10 @@ int main(int argc, char* argv[]) {
         std::signal(SIGINT, signal_handler);
         
         // Create IO context pool
-        server::IOContextPool io_pool(config.io_thread_pool_size);
+        auto io_pool = std::make_shared<server::IOContextPool>(config.io_thread_pool_size);
         
         LOG_INFO("IO context pool created", {
-            {"thread_count", std::to_string(io_pool.size())}
+            {"thread_count", std::to_string(io_pool->size())}
         });
         
         // Initialize caches
@@ -86,13 +86,13 @@ int main(int argc, char* argv[]) {
         
         // Create servers
         auto http_server = std::make_shared<server::HTTPServer>(
-            std::make_shared<server::IOContextPool>(io_pool),
+            io_pool,
             tls_manager,
             http_proxy,
             config.port);
         
         auto agent_server = std::make_shared<server::AgentServer>(
-            std::make_shared<server::IOContextPool>(io_pool),
+            io_pool,
             tls_manager,
             token_validator,
             agent_registry,
@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
         });
         
         // Start IO pool
-        io_pool.start();
+        io_pool->start();
         
         LOG_INFO("Protogate server ready", {
             {"status", "listening"}
@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
         http_server->stop();
         agent_server->stop();
         agent_registry->shutdown();
-        io_pool.stop();
+        io_pool->stop();
         
         LOG_INFO("Protogate server stopped");
         

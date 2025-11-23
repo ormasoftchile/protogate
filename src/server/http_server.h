@@ -66,7 +66,7 @@ private:
                   boost::asio::ssl::context& ssl_context,
                   std::shared_ptr<proxy::HTTPProxy> http_proxy);
 
-        boost::asio::ip::tcp::socket& socket() { return socket_.lowest_layer(); }
+        auto& socket() { return socket_.lowest_layer(); }
 
         void start();
 

@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <chrono>
+#include <array>
 
 namespace protogate {
 namespace security {
@@ -93,7 +94,7 @@ private:
     /**
      * @brief Compute SHA-256 hash of token
      */
-    std::string compute_token_hash(const std::string& token) const;
+    std::array<uint8_t, 32> compute_token_hash(const std::string& token) const;
 
     /**
      * @brief Check if token is expired

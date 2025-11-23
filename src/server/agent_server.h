@@ -70,7 +70,7 @@ private:
                       std::shared_ptr<security::TokenValidator> token_validator,
                       std::shared_ptr<agent::AgentRegistry> agent_registry);
 
-        boost::asio::ip::tcp::socket& socket() { return socket_.lowest_layer(); }
+        auto& socket() { return socket_.lowest_layer(); }
 
         void start();
 

@@ -117,6 +117,12 @@ private:
 };
 
 // Convenience macros for logging
+// Convenience macros for logging
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
+#endif
+
 #define LOG_DEBUG(msg, ...) \
     protogate::observability::Logger::instance().debug(msg, ##__VA_ARGS__)
 
@@ -131,6 +137,10 @@ private:
 
 #define LOG_CRITICAL(msg, ...) \
     protogate::observability::Logger::instance().critical(msg, ##__VA_ARGS__)
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 }  // namespace observability
 }  // namespace protogate

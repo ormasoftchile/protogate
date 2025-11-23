@@ -15,7 +15,7 @@ IOContextPool::IOContextPool(size_t pool_size) {
     // Create io_context instances
     for (size_t i = 0; i < pool_size; ++i) {
         auto io_context = std::make_shared<boost::asio::io_context>();
-        auto work = std::make_shared<boost::asio::io_context::work>(*io_context);
+        auto work = boost::asio::make_work_guard(*io_context);
         
         io_contexts_.push_back(io_context);
         work_guards_.push_back(work);

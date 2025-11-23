@@ -29,7 +29,7 @@ TokenValidator::ValidationResult TokenValidator::validate(const std::string& aut
 
 TokenValidator::ValidationResult TokenValidator::validate_token(const std::string& token) {
     // Compute token hash
-    std::string token_hash = compute_token_hash(token);
+    auto token_hash = compute_token_hash(token);
     
     // Search cache for matching token
     bool found = false;
@@ -39,9 +39,10 @@ TokenValidator::ValidationResult TokenValidator::validate_token(const std::strin
         if (auth_token.token_hash == token_hash) {
             // Check expiration
             if (is_expired(auth_token)) {
+                auto expires_time = std::chrono::system_clock::to_time_t(auth_token.expires_at);
                 observability::Logger::instance().warning("Token expired", {
                     {"tunnel_id", tunnel_id},
-                    {"expires_at", std::to_string(auth_token.expires_at)}
+                    {"expires_at", std::to_string(expires_time)}
                 });
                 return; // Continue searching
             }
@@ -104,7 +105,7 @@ std::string TokenValidator::extract_token(const std::string& authorization_heade
     // Expected format: "Bearer tnl_..."
     const std::string bearer_prefix = "Bearer ";
     
-    if (!authorization_header.starts_with(bearer_prefix)) {
+    if (authorization_header.compare(0, bearer_prefix.length(), bearer_prefix) != 0) {
         return "";
     }
     
@@ -115,31 +116,22 @@ std::string TokenValidator::extract_token(const std::string& authorization_heade
     token.erase(token.find_last_not_of(" \t\n\r") + 1);
     
     // Validate token prefix
-    if (!token.starts_with("tnl_")) {
+    if (token.compare(0, 4, "tnl_") != 0) {
         return "";
     }
     
     return token;
 }
 
-std::string TokenValidator::compute_token_hash(const std::string& token) const {
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256(reinterpret_cast<const unsigned char*>(token.data()), token.size(), hash);
-    
-    // Convert to hex string
-    std::ostringstream oss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
-    }
-    
-    return oss.str();
+std::array<uint8_t, 32> TokenValidator::compute_token_hash(const std::string& token) const {
+    std::array<uint8_t, 32> hash;
+    SHA256(reinterpret_cast<const unsigned char*>(token.data()), token.size(), hash.data());
+    return hash;
 }
 
 bool TokenValidator::is_expired(const models::AuthToken& token) const {
     auto now = std::chrono::system_clock::now();
-    auto now_time_t = std::chrono::system_clock::to_time_t(now);
-    
-    return now_time_t >= token.expires_at;
+    return now >= token.expires_at;
 }
 
 }  // namespace security

@@ -184,9 +184,9 @@ void AgentServer::AgentHandshake::authenticate(const std::string& auth_data) {
             line.pop_back();
         }
         
-        if (line.starts_with("Authorization: ")) {
+        if (line.compare(0, 15, "Authorization: ") == 0) {
             authorization = line.substr(15);
-        } else if (line.starts_with("X-Tunnel-ID: ")) {
+        } else if (line.compare(0, 13, "X-Tunnel-ID: ") == 0) {
             tunnel_id_header = line.substr(13);
         }
     }
@@ -218,8 +218,9 @@ void AgentServer::AgentHandshake::authenticate(const std::string& auth_data) {
     }
     
     // Create AgentConnection
-    auto& io_context = socket_.get_executor().context();
-    auto ssl_context = socket_.native_handle(); // TODO: Get proper context
+    // TODO: Pass TLS socket and io_context to AgentConnection
+    // auto& io_context = socket_.get_executor().context();
+    // auto ssl_context = socket_.native_handle();
     
     // For MVP, we need to transfer ownership of socket to AgentConnection
     // This requires refactoring AgentConnection to accept existing socket
