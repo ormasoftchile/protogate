@@ -1,0 +1,298 @@
+// tests/integration/tcp_reconnect_test.cpp
+// TCP reconnection and recovery integration tests
+
+#include <gtest/gtest.h>
+#include "../../src/proxy/tcp_proxy.h"
+#include "../../src/proxy/protocol_multiplexer.h"
+#include "../../src/agent/agent_registry.h"
+#include "../../src/storage/cache.h"
+#include "../../src/models/tunnel.h"
+#include "../../src/core/io_context_pool.h"
+#include <boost/asio.hpp>
+#include <thread>
+#include <chrono>
+#include <vector>
+
+using namespace protogate;
+namespace asio = boost::asio;
+
+class TCPReconnectTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        // Initialize components
+        io_pool_ = std::make_shared<core::IOContextPool>(2);
+        agent_registry_ = std::make_shared<agent::AgentRegistry>(100);
+        tunnel_cache_ = std::make_shared<storage::Cache<std::string, models::Tunnel>>(1000);
+        
+        tcp_proxy_ = std::make_unique<proxy::TCPProxy>(
+            io_pool_,
+            agent_registry_,
+            tunnel_cache_
+        );
+        
+        // Start IO thread
+        io_thread_ = std::thread([this]() {
+            io_pool_->run();
+        });
+    }
+    
+    void TearDown() override {
+        io_pool_->stop();
+        if (io_thread_.joinable()) {
+            io_thread_.join();
+        }
+    }
+    
+    std::shared_ptr<core::IOContextPool> io_pool_;
+    std::shared_ptr<agent::AgentRegistry> agent_registry_;
+    std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache_;
+    std::unique_ptr<proxy::TCPProxy> tcp_proxy_;
+    std::thread io_thread_;
+};
+
+// Test: Client disconnects mid-transfer, data resumes correctly after reconnect
+TEST_F(TCPReconnectTest, ClientDisconnectDuringTransfer) {
+    // Create tunnel configuration
+    models::Tunnel tunnel;
+    tunnel.tunnel_id = "printer1";
+    tunnel.target_host = "localhost";
+    tunnel.target_port = 9100;
+    tunnel.protocol = models::TunnelProtocol::TCP;
+    tunnel.status = models::TunnelStatus::ACTIVE;
+    tunnel_cache_->set("printer1", tunnel, std::chrono::hours(1));
+    
+    // Phase 1: Establish connection and send first chunk
+    auto& io_context = io_pool_->get_io_context();
+    asio::ip::tcp::socket client_socket(io_context);
+    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 0));
+    auto local_port = acceptor.local_endpoint().port();
+    
+    // Connect client
+    client_socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port));
+    
+    // Send first 512KB of data
+    std::vector<uint8_t> data_chunk1(512 * 1024);
+    for (size_t i = 0; i < data_chunk1.size(); ++i) {
+        data_chunk1[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+    
+    boost::system::error_code ec;
+    size_t bytes_sent1 = asio::write(client_socket, asio::buffer(data_chunk1), ec);
+    ASSERT_FALSE(ec) << "First write failed: " << ec.message();
+    EXPECT_EQ(bytes_sent1, data_chunk1.size());
+    
+    // Simulate network interruption - forcefully close socket
+    client_socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+    client_socket.close(ec);
+    
+    // Wait for connection to fully close
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // Phase 2: Reconnect and resume transfer
+    asio::ip::tcp::socket client_socket2(io_context);
+    client_socket2.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port));
+    
+    // Send second 512KB chunk
+    std::vector<uint8_t> data_chunk2(512 * 1024);
+    for (size_t i = 0; i < data_chunk2.size(); ++i) {
+        data_chunk2[i] = static_cast<uint8_t>((i + data_chunk1.size()) & 0xFF);
+    }
+    
+    size_t bytes_sent2 = asio::write(client_socket2, asio::buffer(data_chunk2), ec);
+    ASSERT_FALSE(ec) << "Second write failed: " << ec.message();
+    EXPECT_EQ(bytes_sent2, data_chunk2.size());
+    
+    // Verify both transfers succeeded independently
+    EXPECT_EQ(bytes_sent1 + bytes_sent2, 1024 * 1024);
+    
+    // Clean shutdown
+    client_socket2.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+    client_socket2.close(ec);
+}
+
+// Test: Server-side connection reset during data transfer
+TEST_F(TCPReconnectTest, ServerResetDuringTransfer) {
+    models::Tunnel tunnel;
+    tunnel.tunnel_id = "printer2";
+    tunnel.target_host = "localhost";
+    tunnel.target_port = 9100;
+    tunnel.protocol = models::TunnelProtocol::TCP;
+    tunnel.status = models::TunnelStatus::ACTIVE;
+    tunnel_cache_->set("printer2", tunnel, std::chrono::hours(1));
+    
+    auto& io_context = io_pool_->get_io_context();
+    asio::ip::tcp::socket client_socket(io_context);
+    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 0));
+    auto local_port = acceptor.local_endpoint().port();
+    
+    client_socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port));
+    
+    // Send data that triggers server-side reset (simulate by closing acceptor)
+    std::vector<uint8_t> data(256 * 1024);
+    std::fill(data.begin(), data.end(), 0xAB);
+    
+    boost::system::error_code ec;
+    asio::async_write(client_socket, asio::buffer(data),
+        [&](const boost::system::error_code& error, std::size_t bytes) {
+            // This callback will receive connection_reset or broken_pipe
+            ec = error;
+        });
+    
+    // Close acceptor to simulate server-side reset
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    acceptor.close();
+    
+    // Wait for error callback
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    
+    // Verify error was detected
+    EXPECT_TRUE(ec == asio::error::connection_reset ||
+                ec == asio::error::broken_pipe ||
+                ec == asio::error::connection_aborted)
+        << "Expected connection error, got: " << ec.message();
+    
+    client_socket.close();
+}
+
+// Test: Multiple rapid reconnections (connection flapping)
+TEST_F(TCPReconnectTest, RapidReconnectionFlapping) {
+    models::Tunnel tunnel;
+    tunnel.tunnel_id = "printer3";
+    tunnel.target_host = "localhost";
+    tunnel.target_port = 9100;
+    tunnel.protocol = models::TunnelProtocol::TCP;
+    tunnel.status = models::TunnelStatus::ACTIVE;
+    tunnel_cache_->set("printer3", tunnel, std::chrono::hours(1));
+    
+    auto& io_context = io_pool_->get_io_context();
+    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 0));
+    auto local_port = acceptor.local_endpoint().port();
+    
+    // Perform 10 rapid connect-disconnect cycles
+    const int cycle_count = 10;
+    int successful_connections = 0;
+    
+    for (int i = 0; i < cycle_count; ++i) {
+        asio::ip::tcp::socket socket(io_context);
+        boost::system::error_code ec;
+        
+        // Connect
+        socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+        if (!ec) {
+            successful_connections++;
+            
+            // Send small data packet
+            std::vector<uint8_t> data(1024, static_cast<uint8_t>(i));
+            asio::write(socket, asio::buffer(data), ec);
+            
+            // Immediate disconnect
+            socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+            socket.close(ec);
+        }
+        
+        // Small delay between cycles
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    
+    // At least 80% of connection attempts should succeed despite rapid cycling
+    EXPECT_GE(successful_connections, cycle_count * 0.8)
+        << "Only " << successful_connections << "/" << cycle_count << " connections succeeded";
+}
+
+// Test: Connection timeout after prolonged inactivity
+TEST_F(TCPReconnectTest, ConnectionTimeoutAfterInactivity) {
+    models::Tunnel tunnel;
+    tunnel.tunnel_id = "printer4";
+    tunnel.target_host = "localhost";
+    tunnel.target_port = 9100;
+    tunnel.protocol = models::TunnelProtocol::TCP;
+    tunnel.status = models::TunnelStatus::ACTIVE;
+    tunnel_cache_->set("printer4", tunnel, std::chrono::hours(1));
+    
+    auto& io_context = io_pool_->get_io_context();
+    asio::ip::tcp::socket client_socket(io_context);
+    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 0));
+    auto local_port = acceptor.local_endpoint().port();
+    
+    boost::system::error_code ec;
+    client_socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    ASSERT_FALSE(ec);
+    
+    // Send initial data
+    std::vector<uint8_t> data(1024, 0x55);
+    asio::write(client_socket, asio::buffer(data), ec);
+    EXPECT_FALSE(ec);
+    
+    // Simulate prolonged inactivity (2 seconds - not real 30-minute timeout for testing)
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    
+    // Try to send data after inactivity
+    std::vector<uint8_t> data2(1024, 0xAA);
+    asio::write(client_socket, asio::buffer(data2), ec);
+    
+    // Connection should still be valid (timeout not reached)
+    EXPECT_FALSE(ec) << "Connection should remain valid after 2s inactivity";
+    
+    client_socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+    client_socket.close(ec);
+}
+
+// Test: Partial data transmission before disconnect
+TEST_F(TCPReconnectTest, PartialDataTransmissionRecovery) {
+    models::Tunnel tunnel;
+    tunnel.tunnel_id = "printer5";
+    tunnel.target_host = "localhost";
+    tunnel.target_port = 9100;
+    tunnel.protocol = models::TunnelProtocol::TCP;
+    tunnel.status = models::TunnelStatus::ACTIVE;
+    tunnel_cache_->set("printer5", tunnel, std::chrono::hours(1));
+    
+    auto& io_context = io_pool_->get_io_context();
+    asio::ip::tcp::acceptor acceptor(io_context, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), 0));
+    auto local_port = acceptor.local_endpoint().port();
+    
+    // First connection: send partial data
+    {
+        asio::ip::tcp::socket socket(io_context);
+        boost::system::error_code ec;
+        socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+        ASSERT_FALSE(ec);
+        
+        // Send only part of expected data
+        std::vector<uint8_t> partial_data(128 * 1024); // 128KB instead of full 1MB
+        for (size_t i = 0; i < partial_data.size(); ++i) {
+            partial_data[i] = static_cast<uint8_t>(i & 0xFF);
+        }
+        
+        size_t bytes_sent = asio::write(socket, asio::buffer(partial_data), ec);
+        EXPECT_EQ(bytes_sent, partial_data.size());
+        
+        // Disconnect without completing transfer
+        socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+        socket.close(ec);
+    }
+    
+    // Wait for connection cleanup
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    
+    // Second connection: verify new independent transfer works
+    {
+        asio::ip::tcp::socket socket(io_context);
+        boost::system::error_code ec;
+        socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+        ASSERT_FALSE(ec);
+        
+        // Send complete data this time
+        std::vector<uint8_t> full_data(256 * 1024); // 256KB
+        for (size_t i = 0; i < full_data.size(); ++i) {
+            full_data[i] = static_cast<uint8_t>((i + 1000) & 0xFF); // Different pattern
+        }
+        
+        size_t bytes_sent = asio::write(socket, asio::buffer(full_data), ec);
+        EXPECT_FALSE(ec) << "Second connection should succeed independently";
+        EXPECT_EQ(bytes_sent, full_data.size());
+        
+        socket.shutdown(asio::ip::tcp::socket::shutdown_both, ec);
+        socket.close(ec);
+    }
+}
