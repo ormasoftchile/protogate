@@ -144,8 +144,8 @@
 
 - [X] T059 [US3] Create tests/integration/management_api_test.cpp - CRUD operations for tunnels
 - [X] T060 [P] [US3] Create tests/integration/token_rotation_test.cpp - rotate token, verify old token valid for 5 min
-- [ ] T061 [P] [US3] Create tests/unit/token_generation_test.cpp - verify 256-bit entropy, no collisions
-- [ ] T062 [US3] Create tests/integration/keyvault_integration_test.cpp - store/retrieve secrets from Key Vault
+- [X] T061 [P] [US3] Create tests/unit/token_generation_test.cpp - verify 256-bit entropy, no collisions
+- [X] T062 [US3] Create tests/integration/keyvault_integration_test.cpp - store/retrieve secrets from Key Vault
 
 **Checkpoint**: ✅ User Story 3 complete - Management API functional, token lifecycle managed
 
@@ -159,17 +159,17 @@
 
 ### Implementation Tasks
 
-- [ ] T063 [US4] Implement wildcard certificate loading in tls_manager.cpp - parse PFX/PEM from Key Vault
-- [ ] T064 [US4] Implement SNI routing in http_server.cpp - match SNI hostname to certificate
-- [ ] T065 [US4] Add certificate hot reload in tls_manager.cpp - watch Key Vault for cert updates, reload without downtime
-- [ ] T066 [US4] Add TLS version enforcement in tls_manager.cpp - reject TLS 1.0/1.1, require 1.2+ via OpenSSL context
-- [ ] T067 [US4] Create src/observability/metrics.h/cpp - metrics collection (active tunnels, throughput, latency)
+- [X] T063 [US4] Implement wildcard certificate loading in tls_manager.cpp - parse PFX/PEM from Key Vault
+- [X] T064 [US4] Implement SNI routing in http_server.cpp - match SNI hostname to certificate
+- [X] T065 [US4] Add certificate hot reload in tls_manager.cpp - watch Key Vault for cert updates, reload without downtime
+- [X] T066 [US4] Add TLS version enforcement in tls_manager.cpp - reject TLS 1.0/1.1, require 1.2+ via OpenSSL context
+- [X] T067 [US4] Create src/observability/metrics.h/cpp - metrics collection (active tunnels, throughput, latency)
 
 ### Testing Tasks
 
-- [ ] T068 [US4] Create tests/integration/wildcard_cert_test.cpp - verify multiple subdomains (api.tunnel.x, app.tunnel.x) use same cert
-- [ ] T069 [P] [US4] Create tests/integration/cert_reload_test.cpp - upload new cert, verify loaded without restart
-- [ ] T070 [P] [US4] Create tests/security/tls_validation_test.cpp - reject TLS 1.0/1.1, accept 1.2/1.3
+- [X] T068 [US4] Create tests/integration/wildcard_cert_test.cpp - verify multiple subdomains (api.tunnel.x, app.tunnel.x) use same cert
+- [X] T069 [P] [US4] Create tests/integration/cert_reload_test.cpp - upload new cert, verify loaded without restart
+- [X] T070 [P] [US4] Create tests/security/tls_validation_test.cpp - reject TLS 1.0/1.1, accept 1.2/1.3
 
 **Checkpoint**: ✅ User Story 4 complete - TLS termination with custom domains operational
 
