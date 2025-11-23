@@ -129,16 +129,16 @@
 
 ### Implementation Tasks
 
-- [ ] T049 [P] [US3] Implement POST /api/v1/tunnels endpoint in src/api/tunnels_handler.cpp
-- [ ] T050 [P] [US3] Implement GET /api/v1/tunnels endpoint in src/api/tunnels_handler.cpp
-- [ ] T051 [P] [US3] Implement GET /api/v1/tunnels/{id} endpoint in src/api/tunnels_handler.cpp
-- [ ] T052 [P] [US3] Implement DELETE /api/v1/tunnels/{id} endpoint in src/api/tunnels_handler.cpp
-- [ ] T053 [P] [US3] Implement POST /api/v1/tunnels/{id}/rotate-token endpoint in src/api/tunnels_handler.cpp
-- [ ] T054 [US3] Add token generation logic in auth_token.cpp - cryptographically secure 256-bit tokens
-- [ ] T055 [US3] Add Key Vault token storage in keyvault_client.cpp - store token as secret, return secret URI
-- [ ] T056 [US3] Implement token rotation with grace period in token_validator.cpp - maintain old + new token for 5 minutes
+- [X] T049 [P] [US3] Implement POST /api/v1/tunnels endpoint in src/api/tunnels_handler.cpp
+- [X] T050 [P] [US3] Implement GET /api/v1/tunnels endpoint in src/api/tunnels_handler.cpp
+- [X] T051 [P] [US3] Implement GET /api/v1/tunnels/{id} endpoint in src/api/tunnels_handler.cpp
+- [X] T052 [P] [US3] Implement DELETE /api/v1/tunnels/{id} endpoint in src/api/tunnels_handler.cpp
+- [X] T053 [P] [US3] Implement POST /api/v1/tunnels/{id}/rotate-token endpoint in src/api/tunnels_handler.cpp
+- [X] T054 [US3] Add token generation logic in auth_token.cpp - cryptographically secure 256-bit tokens
+- [X] T055 [US3] Add Key Vault token storage in keyvault_client.cpp - store token as secret, return secret URI
+- [X] T056 [US3] Implement token rotation with grace period in token_validator.cpp - maintain old + new token for 5 minutes
 - [ ] T057 [US3] Add tunnel registry persistence in src/storage/tunnel_registry.h/cpp - backup to Azure Blob Storage every 5 minutes
-- [ ] T058 [US3] Create src/api/router.h/cpp - HTTP request router for management API endpoints
+- [X] T058 [US3] Create src/api/router.h/cpp - HTTP request router for management API endpoints
 
 ### Testing Tasks
 
