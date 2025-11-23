@@ -142,8 +142,8 @@
 
 ### Testing Tasks
 
-- [ ] T059 [US3] Create tests/integration/management_api_test.cpp - CRUD operations for tunnels
-- [ ] T060 [P] [US3] Create tests/integration/token_rotation_test.cpp - rotate token, verify old token valid for 5 min
+- [X] T059 [US3] Create tests/integration/management_api_test.cpp - CRUD operations for tunnels
+- [X] T060 [P] [US3] Create tests/integration/token_rotation_test.cpp - rotate token, verify old token valid for 5 min
 - [ ] T061 [P] [US3] Create tests/unit/token_generation_test.cpp - verify 256-bit entropy, no collisions
 - [ ] T062 [US3] Create tests/integration/keyvault_integration_test.cpp - store/retrieve secrets from Key Vault
 
