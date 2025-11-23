@@ -1,0 +1,704 @@
+openapi: 3.0.3
+info:
+  title: DNS-Tunnel Management API
+  description: |
+    API for managing tunnel lifecycle: create, list, delete tunnels, and rotate authentication tokens.
+    
+    **Authentication**: Azure Entra ID (OAuth 2.0) with Bearer token in Authorization header.
+    
+    **RBAC Policies**:
+    - `Tunnel.Admin`: Full access (create, delete, rotate tokens)
+    - `Tunnel.Operator`: Read-only access (list tunnels, view status)
+    
+    **Base URL**: `https://api.tunnel.mycorp.com/api/v1`
+  version: 1.0.0
+  contact:
+    name: DNS-Tunnel Team
+    email: dns-tunnel@mycorp.com
+
+servers:
+  - url: https://api.tunnel.mycorp.com/api/v1
+    description: Production server
+  - url: https://staging-api.tunnel.mycorp.com/api/v1
+    description: Staging server
+
+security:
+  - EntraID: []
+
+paths:
+  /tunnels:
+    get:
+      summary: List all tunnels
+      description: |
+        Retrieve a list of all tunnels owned by the authenticated user or organization.
+        Supports filtering, pagination, and sorting.
+      operationId: listTunnels
+      tags:
+        - Tunnels
+      parameters:
+        - name: status
+          in: query
+          description: Filter by tunnel status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, ERROR]
+        - name: protocol
+          in: query
+          description: Filter by protocol type
+          schema:
+            type: string
+            enum: [HTTP, HTTPS, TCP]
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          description: Sort field and direction (e.g., "created_at:desc")
+          schema:
+            type: string
+            default: created_at:desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tunnel'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      summary: Create a new tunnel
+      description: |
+        Create a new tunnel with specified configuration. Generates an authentication token
+        that the agent will use to connect. Token is returned ONLY in the creation response.
+      operationId: createTunnel
+      tags:
+        - Tunnels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TunnelCreateRequest'
+      responses:
+        '201':
+          description: Tunnel created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnel:
+                    $ref: '#/components/schemas/Tunnel'
+                  token:
+                    type: string
+                    description: Authentication token (returned ONLY at creation)
+                    example: tnl_a1b2c3d4e5f6g7h8i9j0
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Tunnel ID already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tunnels/{tunnelId}:
+    get:
+      summary: Get tunnel details
+      description: Retrieve detailed information about a specific tunnel.
+      operationId: getTunnel
+      tags:
+        - Tunnels
+      parameters:
+        - $ref: '#/components/parameters/TunnelIdPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TunnelDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      summary: Update tunnel configuration
+      description: |
+        Update tunnel settings (IP allowlist, rate limits, target URL).
+        Cannot change tunnel ID or protocol.
+      operationId: updateTunnel
+      tags:
+        - Tunnels
+      parameters:
+        - $ref: '#/components/parameters/TunnelIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TunnelUpdateRequest'
+      responses:
+        '200':
+          description: Tunnel updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tunnel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      summary: Delete a tunnel
+      description: |
+        Permanently delete a tunnel. Active agent connections will be closed.
+        This operation cannot be undone.
+      operationId: deleteTunnel
+      tags:
+        - Tunnels
+      parameters:
+        - $ref: '#/components/parameters/TunnelIdPath'
+      responses:
+        '204':
+          description: Tunnel deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tunnels/{tunnelId}/rotate-token:
+    post:
+      summary: Rotate tunnel authentication token
+      description: |
+        Generate a new authentication token for the tunnel and invalidate the old one.
+        The agent will need to reconnect with the new token.
+        
+        **Grace period**: Old token remains valid for 5 minutes to allow agent reconnection.
+      operationId: rotateTunnelToken
+      tags:
+        - Tunnels
+      parameters:
+        - $ref: '#/components/parameters/TunnelIdPath'
+      responses:
+        '200':
+          description: Token rotated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: New authentication token
+                    example: tnl_x9y8z7w6v5u4t3s2r1q0
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: When the old token expires
+                    example: '2025-11-22T14:05:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tunnels/{tunnelId}/agents:
+    get:
+      summary: List active agents
+      description: |
+        Retrieve a list of currently connected agents for the tunnel.
+        Useful for monitoring and troubleshooting.
+      operationId: listTunnelAgents
+      tags:
+        - Tunnels
+      parameters:
+        - $ref: '#/components/parameters/TunnelIdPath'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TunnelAgent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tunnels/{tunnelId}/metrics:
+    get:
+      summary: Get tunnel metrics
+      description: |
+        Retrieve aggregated metrics for the tunnel over a specified time range.
+        Metrics include request count, error rate, latency percentiles, and data transfer.
+      operationId: getTunnelMetrics
+      tags:
+        - Metrics
+      parameters:
+        - $ref: '#/components/parameters/TunnelIdPath'
+        - name: start_time
+          in: query
+          description: Start of time range (ISO 8601)
+          required: true
+          schema:
+            type: string
+            format: date-time
+            example: '2025-11-21T00:00:00Z'
+        - name: end_time
+          in: query
+          description: End of time range (ISO 8601)
+          required: true
+          schema:
+            type: string
+            format: date-time
+            example: '2025-11-22T00:00:00Z'
+        - name: granularity
+          in: query
+          description: Metric aggregation granularity
+          schema:
+            type: string
+            enum: [1m, 5m, 1h, 1d]
+            default: 5m
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TunnelMetrics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Return server health status (used by Azure Container Apps health probes).
+      operationId: getHealth
+      tags:
+        - System
+      security: []  # No auth required
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: '2025-11-22T12:00:00Z'
+        '503':
+          description: Server is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unhealthy]
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                    example: ['Key Vault unreachable']
+
+components:
+  securitySchemes:
+    EntraID:
+      type: oauth2
+      description: Azure Entra ID OAuth 2.0 authentication
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token
+          scopes:
+            api://dns-tunnel/.default: Full API access
+
+  parameters:
+    TunnelIdPath:
+      name: tunnelId
+      in: path
+      description: Tunnel identifier (alphanumeric, hyphens allowed)
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+        example: api
+
+  schemas:
+    Tunnel:
+      type: object
+      required:
+        - tunnel_id
+        - protocol
+        - target_url
+        - status
+        - created_at
+        - public_url
+      properties:
+        tunnel_id:
+          type: string
+          description: Unique tunnel identifier
+          example: api
+        protocol:
+          type: string
+          enum: [HTTP, HTTPS, TCP]
+          description: Tunnel protocol type
+          example: HTTPS
+        target_url:
+          type: string
+          description: Local target URL or host:port
+          example: http://localhost:5000
+        ip_allowlist:
+          type: array
+          items:
+            type: string
+          description: CIDR blocks allowed to access the tunnel (empty = all IPs allowed)
+          example: ['203.0.113.0/24', '198.51.100.45/32']
+        rate_limit_rpm:
+          type: integer
+          minimum: 0
+          description: Requests per minute limit (0 = unlimited)
+          example: 1000
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, ERROR]
+          description: Current tunnel status
+          example: ACTIVE
+        created_at:
+          type: string
+          format: date-time
+          description: Tunnel creation timestamp
+          example: '2025-11-22T10:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+          example: '2025-11-22T10:30:00Z'
+        public_url:
+          type: string
+          format: uri
+          description: Public URL for accessing the tunnel
+          example: https://api.tunnel.mycorp.com
+
+    TunnelDetails:
+      allOf:
+        - $ref: '#/components/schemas/Tunnel'
+        - type: object
+          properties:
+            connected_agents:
+              type: integer
+              description: Number of currently connected agents
+              example: 1
+            last_request_at:
+              type: string
+              format: date-time
+              description: Timestamp of last request
+              example: '2025-11-22T11:45:00Z'
+            total_requests:
+              type: integer
+              description: Total requests since creation
+              example: 15234
+            error_rate:
+              type: number
+              format: float
+              description: Error rate (0.0 to 1.0)
+              example: 0.002
+
+    TunnelCreateRequest:
+      type: object
+      required:
+        - tunnel_id
+        - protocol
+        - target_url
+      properties:
+        tunnel_id:
+          type: string
+          pattern: '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'
+          description: Unique tunnel identifier (DNS-safe)
+          example: api
+        protocol:
+          type: string
+          enum: [HTTP, HTTPS, TCP]
+          description: Tunnel protocol type
+          example: HTTPS
+        target_url:
+          type: string
+          description: Local target URL (http://host:port) or host:port for TCP
+          example: http://localhost:5000
+        ip_allowlist:
+          type: array
+          items:
+            type: string
+          description: CIDR blocks allowed to access the tunnel
+          example: ['203.0.113.0/24']
+        rate_limit_rpm:
+          type: integer
+          minimum: 0
+          description: Requests per minute limit (0 = unlimited)
+          default: 0
+          example: 1000
+
+    TunnelUpdateRequest:
+      type: object
+      properties:
+        target_url:
+          type: string
+          description: Updated local target URL
+          example: http://localhost:8080
+        ip_allowlist:
+          type: array
+          items:
+            type: string
+          description: Updated CIDR blocks
+          example: ['203.0.113.0/24', '198.51.100.0/24']
+        rate_limit_rpm:
+          type: integer
+          minimum: 0
+          description: Updated rate limit
+          example: 2000
+
+    TunnelAgent:
+      type: object
+      required:
+        - connection_id
+        - connected_at
+        - source_ip
+        - agent_version
+        - last_heartbeat
+      properties:
+        connection_id:
+          type: string
+          format: uuid
+          description: Unique connection identifier
+          example: 550e8400-e29b-41d4-a716-446655440000
+        connected_at:
+          type: string
+          format: date-time
+          description: Connection establishment timestamp
+          example: '2025-11-22T10:15:00Z'
+        source_ip:
+          type: string
+          format: ipv4
+          description: Agent's source IP address
+          example: 198.51.100.45
+        agent_version:
+          type: string
+          description: Agent software version
+          example: 1.0.0
+        last_heartbeat:
+          type: string
+          format: date-time
+          description: Last heartbeat timestamp
+          example: '2025-11-22T11:59:30Z'
+
+    TunnelMetrics:
+      type: object
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          example: '2025-11-21T00:00:00Z'
+        end_time:
+          type: string
+          format: date-time
+          example: '2025-11-22T00:00:00Z'
+        datapoints:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+                example: '2025-11-21T00:05:00Z'
+              request_count:
+                type: integer
+                example: 150
+              error_count:
+                type: integer
+                example: 3
+              bytes_sent:
+                type: integer
+                format: int64
+                example: 524288
+              bytes_received:
+                type: integer
+                format: int64
+                example: 1048576
+              latency_p50:
+                type: number
+                format: float
+                description: 50th percentile latency (ms)
+                example: 12.5
+              latency_p95:
+                type: number
+                format: float
+                description: 95th percentile latency (ms)
+                example: 45.3
+              latency_p99:
+                type: number
+                format: float
+                description: 99th percentile latency (ms)
+                example: 98.7
+
+    Pagination:
+      type: object
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        total_pages:
+          type: integer
+          example: 5
+        total_items:
+          type: integer
+          example: 87
+        items_per_page:
+          type: integer
+          example: 20
+
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Machine-readable error code
+          example: INVALID_TUNNEL_ID
+        message:
+          type: string
+          description: Human-readable error message
+          example: Tunnel ID must be alphanumeric and DNS-safe
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
+          example:
+            field: tunnel_id
+            value: invalid_id!
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Valid Azure Entra ID token required
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: User lacks Tunnel.Admin role
+
+    NotFound:
+      description: Tunnel not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TUNNEL_NOT_FOUND
+            message: Tunnel 'api' does not exist
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: An unexpected error occurred

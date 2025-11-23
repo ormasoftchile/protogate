@@ -1,3 +1,47 @@
+# Project Vision: Protogate + Printer4All + Email Printing
+
+This document presents the three core ideas that together define a powerful, secure, and extensible platform for remote device access and printing.
+
+---
+
+## 1 — Protogate (Infrastructure Layer)
+A self-hosted, secure alternative to ngrok, built in C++ and deployed inside each company’s Azure subscription.
+
+### Purpose
+Provide enterprises with a fully controlled, internal-only reverse tunneling solution for exposing on-prem or edge services (HTTP and TCP) to cloud apps without VPNs, without external SaaS, and without opening inbound firewall ports.
+
+### Key Features
+- Reverse tunnels over outbound TLS connections
+- Supports HTTP and TCP tunnels
+- Secure by design:
+  - TLS / mTLS
+  - Per-tunnel tokens
+  - IP allowlists / Azure Front Door WAF
+- Azure-native deployment:
+  - Azure Container Apps, AKS, or VM
+  - DNS Zone integration (e.g. *.tunnel.mycorp.com)
+  - Key Vault for certs/keys
+  - Log Analytics for observability
+- Minimal cost for users (as low as $6–12 per month)
+
+### Conceptual Azure Deployment
+
+```
+Protogate Resource (marketplace-style)
+├── Tunnel Server (Container App / AKS / VM)
+├── DNS Zone: *.tunnel.mycorp.com
+├── Key Vault: TLS + token signing keys
+└── Log Analytics workspace
+```
+
+### Example Tunnels
+| Tunnel ID | Type | Public URL                                | Local Target         |
+|-----------|------|---------------------------------------------|----------------------|
+| api       | http | https://api.tunnel.mycorp.com               | 127.0.0.1:5000       |
+| printer1  | tcp  | https://printer1.store123.tunnel.mycorp.com | 10.0.0.50:9100       |
+
+---
+
 # ngrok-Alternatives Comparison Matrix
 
 | Name                        | Protocols (HTTP/HTTPS, TCP, UDP)        | Custom Domain / Subdomain        | Self-Hosting Supported?        | Entry Pricing*           | Notes / Strengths & Weaknesses                                                                   |
@@ -25,6 +69,3 @@
 - **Cost transparency & control** is a plus. Many tools lock features behind paid tiers; self-hosting shifts cost model to user infra (which aligns with your pitch).
 
 ---
-
-If you like, I can **extend this matrix to 15 tools**, and include **columns for “Built-in inspection / replay”, “UDP support”, “Team/Collab features”**, and **“Enterprise SLA / vendor vs open-source”**, so you have a full landscape for competitive analysis.
-::contentReference[oaicite:10]{index=10}

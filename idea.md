@@ -1,10 +1,10 @@
-# Project Vision: DNS-Tunnel + Printer4All + Email Printing
+# Project Vision: Protogate + Printer4All + Email Printing
 
 This document presents the three core ideas that together define a powerful, secure, and extensible platform for remote device access and printing.
 
 ---
 
-## 1 — DNS-Tunnel (Infrastructure Layer)
+## 1 — Protogate (Infrastructure Layer)
 A self-hosted, secure alternative to ngrok, built in C++ and deployed inside each company’s Azure subscription.
 
 ### Purpose
@@ -25,7 +25,7 @@ Provide enterprises with a fully controlled, internal-only reverse tunneling sol
 - Minimal cost for users (as low as $6–12 per month)
 
 ### Conceptual Azure Deployment
-DNS-Tunnel Resource (marketplace-style)
+Protogate Resource (marketplace-style)
 |
 |-- Tunnel Server (Container App / AKS / VM)
 |-- DNS Zone: *.tunnel.mycorp.com
@@ -41,7 +41,7 @@ DNS-Tunnel Resource (marketplace-style)
 ---
 
 ## 2 — Printer4All (Application Layer)
-A remote printing service built on top of DNS-Tunnel, enabling businesses to print securely to any branch, POS, or on-prem printer, including legacy USB/serial thermal printers.
+A remote printing service built on top of Protogate, enabling businesses to print securely to any branch, POS, or on-prem printer, including legacy USB/serial thermal printers.
 
 ### Purpose
 Provide businesses with a secure, cloud-based printing workflow that works with any printer, even those behind NAT or lacking network capabilities.
@@ -53,7 +53,7 @@ Provide businesses with a secure, cloud-based printing workflow that works with 
 2. In the cloud:
    - Printer4All accepts print jobs via API, UI, or Email
    - Resolves printer via tunnel ID
-   - Sends job securely over DNS-Tunnel
+   - Sends job securely over Protogate
 3. On site:
    - Agent uses OS print APIs (Windows Spooler / CUPS)
    - Printer prints using the vendor driver
@@ -68,13 +68,13 @@ Provide businesses with a secure, cloud-based printing workflow that works with 
 
 ### Architecture
 Cloud App -> Printer4All API  
-           -> DNS-Tunnel Server  
+           -> Protogate Server  
            -> tunnel-agent (branch)  
            -> print-agent (OS driver)  
            -> Printer (thermal / USB / IP)
 
 ### Offering Options
-- Self-hosted by companies alongside their DNS-Tunnel
+- Self-hosted by companies alongside their Protogate
 - Free public demo instance hosted by you, limited but useful for tests
 
 ---
@@ -99,7 +99,7 @@ The system extracts:
 - Attachments (PDF, TXT, PNG, JPG)
 - Formatting hints
 
-Then generates a print job and delivers it through DNS-Tunnel.
+Then generates a print job and delivers it through Protogate.
 
 ---
 
@@ -146,7 +146,7 @@ DNS-Tunnel
 A secure, Azure-deployable reverse tunnel infrastructure — the open-source foundation.
 
 Printer4All  
-A cloud application running on top of DNS-Tunnel that enables remote printing in any business scenario.
+A cloud application running on top of Protogate that enables remote printing in any business scenario.
 
 Printer4All Email Service  
 An email-based printing mechanism with admin policies and user override syntax.

@@ -13,7 +13,7 @@ During a bug-bashing session:
 3. Participants are automatically recognized through Entra ID (AAD) authentication.
 4. Each participant chooses their temporary role (Contributor or ReadOnly).
 5. A short-lived access token is issued for the duration of the session.
-6. DNS-Tunnel exposes the developer’s local environment securely to authenticated participants.
+6. Protogate exposes the developer's local environment securely to authenticated participants.
 7. All permissions expire when the session ends.
 8. Telemetry and user activity are captured for review and debugging.
 
@@ -27,7 +27,7 @@ During a bug-bashing session:
   - `SessionId`
   - Meeting/channel binding
   - Duration and allowed roles
-  - Associated DNS-Tunnel endpoint for the environment
+  - Associated Protogate endpoint for the environment
 
 ### 2. Participant Access
 - Users click the bug-bash link in the Teams meeting.
@@ -92,7 +92,7 @@ During a bug-bashing session:
   [Authorize(Policy = "BugBashContributor")]
   ```
 
-The developer never interacts directly with Teams, Graph, or DNS-Tunnel.  
+The developer never interacts directly with Teams, Graph, or Protogate.  
 Everything is abstracted through the BugBash platform layer.
 
 ---
