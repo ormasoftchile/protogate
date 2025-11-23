@@ -102,8 +102,6 @@ TEST_F(AuthenticationTest, DuplicateAgentConnectionRejected) {
 // Test agent registry capacity limit
 TEST_F(AuthenticationTest, AgentRegistryCapacityEnforced) {
     EXPECT_FALSE(agent_registry_->is_full());
-    
-    size_t max_capacity = 50;
     EXPECT_EQ(agent_registry_->count(), 0);
     
     // Would need to create 50 agent connections to test capacity
@@ -128,9 +126,4 @@ TEST_F(AuthenticationTest, TokenRotationDuringActiveSession) {
     auto old = token_cache_->get("test_tunnel:old");
     ASSERT_TRUE(old.has_value());
     EXPECT_EQ(old->token_hash, "valid_hash_12345");
-}
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

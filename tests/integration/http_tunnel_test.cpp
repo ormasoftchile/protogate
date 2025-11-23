@@ -17,11 +17,10 @@ protected:
         // Setup test tunnel
         models::Tunnel tunnel;
         tunnel.tunnel_id = "test_api";
-        tunnel.subdomain = "api";
-        tunnel.protocol = "https";
+        tunnel.protocol = models::TunnelProtocol::HTTP;
         tunnel.target_host = "localhost";
         tunnel.target_port = 8080;
-        tunnel.status = "active";
+        tunnel.status = models::TunnelStatus::ACTIVE;
         
         tunnel_cache_->put("test_api", tunnel, std::chrono::hours(1));
     }
@@ -208,7 +207,7 @@ TEST_F(HTTPTunnelTest, HostnameToTunnelIDMatching) {
 TEST_F(HTTPTunnelTest, AllowedIPAccepted) {
     models::Tunnel tunnel;
     tunnel.tunnel_id = "secure_api";
-    tunnel.allowed_ips = {"192.168.1.100/32", "10.0.0.0/8"};
+    tunnel.ip_allowlist = {"192.168.1.100/32", "10.0.0.0/8"};
     
     bool allowed = http_proxy_->validate_ip_allowlist(tunnel, "192.168.1.100");
     EXPECT_TRUE(allowed);
@@ -218,7 +217,7 @@ TEST_F(HTTPTunnelTest, AllowedIPAccepted) {
 TEST_F(HTTPTunnelTest, BlockedIPRejected) {
     models::Tunnel tunnel;
     tunnel.tunnel_id = "secure_api";
-    tunnel.allowed_ips = {"192.168.1.100/32"};
+    tunnel.ip_allowlist = {"192.168.1.100/32"};
     
     bool allowed = http_proxy_->validate_ip_allowlist(tunnel, "192.168.1.200");
     EXPECT_FALSE(allowed);
@@ -228,13 +227,8 @@ TEST_F(HTTPTunnelTest, BlockedIPRejected) {
 TEST_F(HTTPTunnelTest, EmptyAllowlistAllowsAll) {
     models::Tunnel tunnel;
     tunnel.tunnel_id = "public_api";
-    tunnel.allowed_ips = {};
+    tunnel.ip_allowlist = {};
     
     bool allowed = http_proxy_->validate_ip_allowlist(tunnel, "1.2.3.4");
     EXPECT_TRUE(allowed);
-}
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

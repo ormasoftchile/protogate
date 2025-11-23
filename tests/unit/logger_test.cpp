@@ -50,8 +50,3 @@ TEST_F(LoggerTest, FlushDoesNotCrash) {
         Logger::instance().flush();
     });
 }
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}

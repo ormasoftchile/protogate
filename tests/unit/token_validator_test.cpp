@@ -22,8 +22,8 @@ protected:
 TEST_F(TokenValidatorTest, TokenHashingIsConsistent) {
     models::AuthToken token1;
     token1.token_hash = "hash1";
-    token1.created_at = std::time(nullptr);
-    token1.expires_at = std::time(nullptr) + 3600;
+    token1.created_at = std::chrono::system_clock::now();
+    token1.expires_at = std::chrono::system_clock::now() + std::chrono::hours(1);
     
     // Add token
     validator_->add_token("tunnel1", token1, std::chrono::hours(1));
@@ -42,8 +42,8 @@ TEST_F(TokenValidatorTest, ValidTokenReturnsSuccess) {
     // Create a token with known hash
     models::AuthToken token;
     token.token_hash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"; // Empty string SHA-256
-    token.created_at = std::time(nullptr);
-    token.expires_at = std::time(nullptr) + 3600;
+    token.created_at = std::chrono::system_clock::now();
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(1);
     
     validator_->add_token("tunnel1", token, std::chrono::hours(1));
     
@@ -67,8 +67,8 @@ TEST_F(TokenValidatorTest, InvalidTokenReturnsFailed) {
 TEST_F(TokenValidatorTest, ExpiredTokenRejected) {
     models::AuthToken token;
     token.token_hash = "test_hash";
-    token.created_at = std::time(nullptr) - 7200;
-    token.expires_at = std::time(nullptr) - 3600; // Expired 1 hour ago
+    token.created_at = std::chrono::system_clock::now() - std::chrono::hours(2);
+    token.expires_at = std::chrono::system_clock::now() - std::chrono::hours(1);
     
     validator_->add_token("tunnel1", token, std::chrono::seconds(1));
     
@@ -104,15 +104,15 @@ TEST_F(TokenValidatorTest, MissingBearerPrefix) {
 TEST_F(TokenValidatorTest, TokenRotationWithGracePeriod) {
     models::AuthToken old_token;
     old_token.token_hash = "old_hash";
-    old_token.created_at = std::time(nullptr);
-    old_token.expires_at = std::time(nullptr) + 3600;
+    old_token.created_at = std::chrono::system_clock::now();
+    old_token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(3600);
     
     validator_->add_token("tunnel1", old_token, std::chrono::hours(1));
     
     models::AuthToken new_token;
     new_token.token_hash = "new_hash";
-    new_token.created_at = std::time(nullptr);
-    new_token.expires_at = std::time(nullptr) + 3600;
+    new_token.created_at = std::chrono::system_clock::now();
+    new_token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(3600);
     
     // Rotate token with 5-second grace period
     validator_->rotate_token("tunnel1", new_token, std::chrono::seconds(5));
@@ -133,8 +133,8 @@ TEST_F(TokenValidatorTest, TokenRotationWithGracePeriod) {
 TEST_F(TokenValidatorTest, RevokedTokenIsRemoved) {
     models::AuthToken token;
     token.token_hash = "test_hash";
-    token.created_at = std::time(nullptr);
-    token.expires_at = std::time(nullptr) + 3600;
+    token.created_at = std::chrono::system_clock::now();
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(3600);
     
     validator_->add_token("tunnel1", token, std::chrono::hours(1));
     
@@ -154,8 +154,8 @@ TEST_F(TokenValidatorTest, RevokedTokenIsRemoved) {
 TEST_F(TokenValidatorTest, TokenExpiresByTTL) {
     models::AuthToken token;
     token.token_hash = "test_hash";
-    token.created_at = std::time(nullptr);
-    token.expires_at = std::time(nullptr) + 3600;
+    token.created_at = std::chrono::system_clock::now();
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(3600);
     
     // Add with very short TTL
     validator_->add_token("tunnel1", token, std::chrono::seconds(1));
@@ -173,9 +173,4 @@ TEST_F(TokenValidatorTest, TokenExpiresByTTL) {
     // Verify token is gone
     auto after_ttl = token_cache_->get("tunnel1");
     EXPECT_FALSE(after_ttl.has_value());
-}
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }

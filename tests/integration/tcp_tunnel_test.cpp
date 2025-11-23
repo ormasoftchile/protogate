@@ -26,8 +26,8 @@ protected:
         test_tunnel_.tunnel_id = "test-tunnel-001";
         test_tunnel_.protocol = models::TunnelProtocol::TCP;
         test_tunnel_.target_port = 9100;
-        test_tunnel_.hostname = "test.tunnel.local";
-        test_tunnel_.state = models::TunnelState::ACTIVE;
+        test_tunnel_.target_host = "localhost";
+        test_tunnel_.status = models::TunnelStatus::ACTIVE;
         
         tunnel_cache_->put(test_tunnel_.tunnel_id, test_tunnel_);
         
@@ -92,7 +92,6 @@ TEST_F(TCPTunnelTest, Send1MBDataVerifyIntegrity) {
     
     // Create server socket for receiving
     tcp::acceptor server_acceptor(*io_context_, tcp::endpoint(tcp::v4(), 0));
-    uint16_t server_port = server_acceptor.local_endpoint().port();
     auto server_socket = std::make_shared<tcp::socket>(*io_context_);
     
     // Accept connection on server side
@@ -325,9 +324,4 @@ TEST_F(TCPTunnelTest, FlowControlBackpressure) {
         1000);
     
     EXPECT_GT(additional_sent, 0);
-}
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
 }
