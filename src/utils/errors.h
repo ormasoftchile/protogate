@@ -55,7 +55,7 @@ enum class ErrorCode {
 /**
  * @brief Error category for Protogate errors
  */
-class ProtoError std::error_category {
+class ProtoErrorCategory : public std::error_category {
 public:
     const char* name() const noexcept override;
     std::string message(int ev) const override;
