@@ -83,6 +83,12 @@ public:
     void rotate_token(const std::string& tunnel_id, const models::AuthToken& new_token,
                      std::chrono::seconds grace_period = std::chrono::minutes(5));
 
+    /**
+     * @brief Compute SHA-256 hash of token (public static utility)
+     * @return Hex string representation of hash
+     */
+    static std::string compute_token_hash(const std::string& token);
+
 private:
     /**
      * @brief Extract token from Authorization header
@@ -90,12 +96,6 @@ private:
      * @return Token string or empty if invalid format
      */
     std::string extract_token(const std::string& authorization_header) const;
-
-    /**
-     * @brief Compute SHA-256 hash of token
-     * @return Hex string representation of hash
-     */
-    std::string compute_token_hash(const std::string& token) const;
 
     /**
      * @brief Check if token is expired

@@ -123,7 +123,7 @@ std::string TokenValidator::extract_token(const std::string& authorization_heade
     return token;
 }
 
-std::string TokenValidator::compute_token_hash(const std::string& token) const {
+std::string TokenValidator::compute_token_hash(const std::string& token) {
     std::array<uint8_t, 32> hash;
     SHA256(reinterpret_cast<const unsigned char*>(token.data()), token.size(), hash.data());
     
