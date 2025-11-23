@@ -22,14 +22,14 @@
 
 **Purpose**: Create project structure, configure build system, set up dependency management
 
-- [ ] T001 Create project directory structure as defined in plan.md (src/, tests/, deploy/, docs/)
-- [ ] T002 Initialize CMake project with CMakeLists.txt at root, set C++17 minimum, configure vcpkg integration
-- [ ] T003 [P] Create vcpkg.json manifest with dependencies: boost-asio, openssl, nghttp2, nlohmann-json, gtest, benchmark
-- [ ] T004 [P] Create .gitignore for C++ project (build/, vcpkg_installed/, *.o, *.a, compile_commands.json)
-- [ ] T005 [P] Create README.md with project overview, build instructions, prerequisites
-- [ ] T006 [P] Create docker/Dockerfile.alpine with multi-stage build (builder + runtime)
-- [ ] T007 [P] Create .clang-format for code style consistency (Google or LLVM style)
-- [ ] T008 Configure GitHub Actions CI workflow (.github/workflows/ci.yml) for build, test, lint
+- [X] T001 Create project directory structure as defined in plan.md (src/, tests/, deploy/, docs/)
+- [X] T002 Initialize CMake project with CMakeLists.txt at root, set C++17 minimum, configure vcpkg integration
+- [X] T003 [P] Create vcpkg.json manifest with dependencies: boost-asio, openssl, nghttp2, nlohmann-json, gtest, benchmark
+- [X] T004 [P] Create .gitignore for C++ project (build/, vcpkg_installed/, *.o, *.a, compile_commands.json)
+- [X] T005 [P] Create README.md with project overview, build instructions, prerequisites
+- [X] T006 [P] Create docker/Dockerfile.alpine with multi-stage build (builder + runtime)
+- [X] T007 [P] Create .clang-format for code style consistency (Google or LLVM style)
+- [X] T008 Configure GitHub Actions CI workflow (.github/workflows/ci.yml) for build, test, lint
 
 ---
 
