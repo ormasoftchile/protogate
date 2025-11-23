@@ -8,8 +8,11 @@
 namespace protogate {
 namespace security {
 
-TLSManager::TLSManager(const std::string& key_vault_uri)
-    : key_vault_uri_(key_vault_uri) {
+TLSManager::TLSManager(const std::string& key_vault_uri, boost::asio::io_context* io_context)
+    : key_vault_uri_(key_vault_uri),
+      io_context_(io_context),
+      auto_reload_active_(false),
+      reload_interval_minutes_(60) {
     
     // Create default contexts
     default_client_context_ = std::make_shared<ssl_context>(ssl_context::tlsv12_server);
@@ -19,7 +22,8 @@ TLSManager::TLSManager(const std::string& key_vault_uri)
     configure_tls_options(*agent_context_);
     
     observability::Logger::instance().info("TLSManager initialized", {
-        {"key_vault_uri", key_vault_uri_}
+        {"key_vault_uri", key_vault_uri_},
+        {"auto_reload_support", io_context_ ? "enabled" : "disabled"}
     });
 }
 
@@ -234,6 +238,81 @@ std::string TLSManager::match_certificate(const std::string& hostname) const {
     }
     
     return ""; // No match
+}
+
+void TLSManager::start_auto_reload(unsigned int reload_interval_minutes) {
+    if (!io_context_) {
+        observability::Logger::instance().warning("Cannot start auto-reload: no IO context provided");
+        return;
+    }
+    
+    if (auto_reload_active_) {
+        observability::Logger::instance().warning("Auto-reload already active");
+        return;
+    }
+    
+    reload_interval_minutes_ = reload_interval_minutes;
+    auto_reload_active_ = true;
+    
+    // Create timer if not exists
+    if (!reload_timer_) {
+        reload_timer_ = std::make_unique<boost::asio::steady_timer>(*io_context_);
+    }
+    
+    observability::Logger::instance().info("Certificate auto-reload started", {
+        {"interval_minutes", std::to_string(reload_interval_minutes_)}
+    });
+    
+    schedule_reload();
+}
+
+void TLSManager::stop_auto_reload() {
+    if (!auto_reload_active_) {
+        return;
+    }
+    
+    auto_reload_active_ = false;
+    
+    if (reload_timer_) {
+        reload_timer_->cancel();
+    }
+    
+    observability::Logger::instance().info("Certificate auto-reload stopped");
+}
+
+void TLSManager::schedule_reload() {
+    if (!auto_reload_active_ || !reload_timer_) {
+        return;
+    }
+    
+    // Schedule next reload
+    reload_timer_->expires_after(std::chrono::minutes(reload_interval_minutes_));
+    reload_timer_->async_wait([this](const boost::system::error_code& ec) {
+        if (ec) {
+            if (ec != boost::asio::error::operation_aborted) {
+                observability::Logger::instance().error("Certificate reload timer error", {
+                    {"error", ec.message()}
+                });
+            }
+            return;
+        }
+        
+        if (!auto_reload_active_) {
+            return;
+        }
+        
+        observability::Logger::instance().info("Starting scheduled certificate reload");
+        
+        // Reload all certificates
+        size_t reloaded = reload_all_certificates();
+        
+        observability::Logger::instance().info("Scheduled certificate reload completed", {
+            {"certificates_reloaded", std::to_string(reloaded)}
+        });
+        
+        // Schedule next reload
+        schedule_reload();
+    });
 }
 
 }  // namespace security

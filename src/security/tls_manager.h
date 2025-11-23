@@ -1,10 +1,12 @@
 #pragma once
 
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <shared_mutex>
+#include <atomic>
 
 namespace protogate {
 namespace security {
@@ -37,8 +39,10 @@ public:
     /**
      * @brief Initialize TLS manager with Key Vault configuration
      * @param key_vault_uri Base URI of the Key Vault instance
+     * @param io_context IO context for async operations (certificate reload timer)
      */
-    explicit TLSManager(const std::string& key_vault_uri);
+    explicit TLSManager(const std::string& key_vault_uri, 
+                       boost::asio::io_context* io_context = nullptr);
 
     /**
      * @brief Load certificate from Key Vault by secret name
@@ -74,6 +78,22 @@ public:
      */
     size_t reload_all_certificates();
 
+    /**
+     * @brief Start automatic certificate reload with specified interval
+     * @param reload_interval_minutes Interval between reloads (default: 60 minutes)
+     */
+    void start_auto_reload(unsigned int reload_interval_minutes = 60);
+
+    /**
+     * @brief Stop automatic certificate reload
+     */
+    void stop_auto_reload();
+
+    /**
+     * @brief Check if auto-reload is running
+     */
+    bool is_auto_reload_active() const { return auto_reload_active_; }
+
 private:
     /**
      * @brief Create SSL context from certificate data
@@ -90,11 +110,22 @@ private:
      */
     std::string match_certificate(const std::string& hostname) const;
 
+    /**
+     * @brief Schedule next certificate reload
+     */
+    void schedule_reload();
+
     std::string key_vault_uri_;
     std::unordered_map<std::string, Certificate> certificates_; // domain -> cert
     ssl_context_ptr default_client_context_;
     ssl_context_ptr agent_context_;
     std::shared_mutex mutex_; // Protect certificate map during hot reload
+    
+    // Auto-reload support
+    boost::asio::io_context* io_context_;
+    std::unique_ptr<boost::asio::steady_timer> reload_timer_;
+    std::atomic<bool> auto_reload_active_;
+    unsigned int reload_interval_minutes_;
 };
 
 }  // namespace security
