@@ -1,0 +1,76 @@
+# Multi-stage Dockerfile for Protogate Server
+# Stage 1: Builder with all build dependencies
+
+FROM ubuntu:22.04 AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    zip \
+    unzip \
+    tar \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install vcpkg
+WORKDIR /opt
+RUN git clone https://github.com/Microsoft/vcpkg.git && \
+    ./vcpkg/bootstrap-vcpkg.sh && \
+    ln -s /opt/vcpkg/vcpkg /usr/local/bin/vcpkg
+
+ENV VCPKG_ROOT=/opt/vcpkg
+ENV PATH="${VCPKG_ROOT}:${PATH}"
+
+# Copy source code
+WORKDIR /src
+COPY CMakeLists.txt vcpkg.json ./
+COPY src/ ./src/
+
+# Install dependencies via vcpkg
+RUN vcpkg install --triplet=x64-linux
+
+# Build the project
+RUN cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
+    && cmake --build build --target protogate-server --parallel $(nproc)
+
+# Stage 2: Minimal runtime image based on Alpine
+FROM alpine:3.19
+
+# Install runtime dependencies only
+RUN apk add --no-cache \
+    libstdc++ \
+    libgcc \
+    openssl \
+    ca-certificates \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1000 protogate && \
+    adduser -D -u 1000 -G protogate protogate
+
+# Copy binary from builder
+COPY --from=builder /src/build/protogate-server /usr/local/bin/protogate-server
+RUN chmod +x /usr/local/bin/protogate-server
+
+# Switch to non-root user
+USER protogate
+
+# Expose ports
+EXPOSE 443 8443
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:443/health || exit 1
+
+# Set environment defaults
+ENV PORT=443
+ENV AGENT_PORT=8443
+
+# Run the server
+ENTRYPOINT ["/usr/local/bin/protogate-server"]
