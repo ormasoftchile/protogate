@@ -36,7 +36,7 @@ public:
     TCPServer(std::shared_ptr<IOContextPool> io_pool,
              std::shared_ptr<proxy::TCPProxy> tcp_proxy,
              std::shared_ptr<agent::AgentRegistry> agent_registry,
-             std::shared_ptr<storage::Cache> tunnel_cache,
+             std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache,
              const std::vector<uint16_t>& tcp_ports);
 
     /**
@@ -104,7 +104,7 @@ private:
     std::shared_ptr<IOContextPool> io_pool_;
     std::shared_ptr<proxy::TCPProxy> tcp_proxy_;
     std::shared_ptr<agent::AgentRegistry> agent_registry_;
-    std::shared_ptr<storage::Cache> tunnel_cache_;
+    std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache_;
     
     std::vector<std::shared_ptr<PortListener>> listeners_;
     std::unordered_map<uint16_t, std::string> port_to_tunnel_;  // Cache port -> tunnel_id mapping

@@ -14,7 +14,7 @@ struct AuthToken {
     // Identity
     std::string tunnel_id;                  // Associated tunnel
     std::string token;                      // Plain token (never logged or stored)
-    std::array<uint8_t, 32> token_hash;     // SHA-256 hash of token
+    std::string token_hash;                 // SHA-256 hash of token (hex string)
     
     // Metadata
     std::chrono::system_clock::time_point created_at;

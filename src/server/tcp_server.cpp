@@ -10,7 +10,7 @@ using boost::asio::ip::tcp;
 TCPServer::TCPServer(std::shared_ptr<IOContextPool> io_pool,
                      std::shared_ptr<proxy::TCPProxy> tcp_proxy,
                      std::shared_ptr<agent::AgentRegistry> agent_registry,
-                     std::shared_ptr<storage::Cache> tunnel_cache,
+                     std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache,
                      const std::vector<uint16_t>& tcp_ports)
     : io_pool_(std::move(io_pool)),
       tcp_proxy_(std::move(tcp_proxy)),
@@ -208,19 +208,22 @@ std::string TCPServer::find_tunnel_for_port(uint16_t port) const {
         return it->second;
     }
 
-    // Query tunnel cache for port mapping
-    // In a full implementation, tunnels would register their TCP ports
-    // For now, we'll use a simple lookup pattern:
-    // The tunnel cache should have entries like "tcp:9100" -> tunnel_id
-    
-    std::string port_key = "tcp:" + std::to_string(port);
+    // Query tunnel cache for matching port
+    // Iterate through all tunnels to find one with matching target_port
+    std::string matched_tunnel_id;
     
     try {
-        auto tunnel_opt = tunnel_cache_->get(port_key);
-        if (tunnel_opt) {
+        tunnel_cache_->for_each([&](const std::string& tunnel_id, const models::Tunnel& tunnel) {
+            if (tunnel.protocol == models::TunnelProtocol::TCP && 
+                tunnel.target_port == port) {
+                matched_tunnel_id = tunnel_id;
+            }
+        });
+        
+        if (!matched_tunnel_id.empty()) {
             // Cache the mapping for future lookups
-            const_cast<TCPServer*>(this)->port_to_tunnel_[port] = *tunnel_opt;
-            return *tunnel_opt;
+            const_cast<TCPServer*>(this)->port_to_tunnel_[port] = matched_tunnel_id;
+            return matched_tunnel_id;
         }
     } catch (const std::exception& e) {
         observability::Logger::instance().error("Error looking up tunnel for port", {

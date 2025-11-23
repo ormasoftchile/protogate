@@ -123,10 +123,16 @@ std::string TokenValidator::extract_token(const std::string& authorization_heade
     return token;
 }
 
-std::array<uint8_t, 32> TokenValidator::compute_token_hash(const std::string& token) const {
+std::string TokenValidator::compute_token_hash(const std::string& token) const {
     std::array<uint8_t, 32> hash;
     SHA256(reinterpret_cast<const unsigned char*>(token.data()), token.size(), hash.data());
-    return hash;
+    
+    // Convert to hex string
+    std::stringstream ss;
+    for (size_t i = 0; i < 32; ++i) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+    }
+    return ss.str();
 }
 
 bool TokenValidator::is_expired(const models::AuthToken& token) const {

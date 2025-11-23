@@ -93,8 +93,9 @@ private:
 
     /**
      * @brief Compute SHA-256 hash of token
+     * @return Hex string representation of hash
      */
-    std::array<uint8_t, 32> compute_token_hash(const std::string& token) const;
+    std::string compute_token_hash(const std::string& token) const;
 
     /**
      * @brief Check if token is expired

@@ -18,8 +18,8 @@ protected:
         // Setup test tokens
         models::AuthToken valid_token;
         valid_token.token_hash = "valid_hash_12345";
-        valid_token.created_at = std::time(nullptr);
-        valid_token.expires_at = std::time(nullptr) + 86400; // 24 hours
+        valid_token.created_at = std::chrono::system_clock::now();
+        valid_token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
         
         validator_->add_token("test_tunnel", valid_token, std::chrono::hours(24));
     }
@@ -77,8 +77,8 @@ TEST_F(AuthenticationTest, TokenWithoutPrefix) {
 TEST_F(AuthenticationTest, ExpiredTokenRejected) {
     models::AuthToken expired_token;
     expired_token.token_hash = "expired_hash";
-    expired_token.created_at = std::time(nullptr) - 172800; // 2 days ago
-    expired_token.expires_at = std::time(nullptr) - 86400;  // Expired 1 day ago
+    expired_token.created_at = std::chrono::system_clock::now() - std::chrono::hours(48);
+    expired_token.expires_at = std::chrono::system_clock::now() - std::chrono::hours(24);
     
     validator_->add_token("expired_tunnel", expired_token, std::chrono::hours(1));
     
@@ -114,8 +114,8 @@ TEST_F(AuthenticationTest, AgentRegistryCapacityEnforced) {
 TEST_F(AuthenticationTest, TokenRotationDuringActiveSession) {
     models::AuthToken new_token;
     new_token.token_hash = "new_hash_67890";
-    new_token.created_at = std::time(nullptr);
-    new_token.expires_at = std::time(nullptr) + 86400;
+    new_token.created_at = std::chrono::system_clock::now();
+    new_token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
     
     // Rotate token with grace period
     validator_->rotate_token("test_tunnel", new_token, std::chrono::minutes(5));
