@@ -1,5 +1,6 @@
 #include "tcp_proxy.h"
 #include "../observability/logger.h"
+#include "../observability/audit_logger.h"
 #include "../security/ip_allowlist.h"
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
@@ -56,6 +57,14 @@ void TCPProxy::create_connection(
             {"client_ip", client_ip},
             {"target_port", std::to_string(target_port)}
         });
+        
+        // Audit log security event
+        observability::AuditLogger::instance().log_ip_blocked(
+            tunnel_id,
+            client_ip,
+            "TCP",
+            "IP not in tunnel allowlist"
+        );
         
         callback(false, "IP address not allowed");
         
@@ -159,6 +168,14 @@ void TCPProxy::create_connection(
             {"tunnel_id", tunnel_id},
             {"client_ip", client_ip}
         });
+        
+        // Audit log security event
+        observability::AuditLogger::instance().log_ip_blocked(
+            tunnel_id,
+            client_ip,
+            "TCP",
+            "IP not in tunnel allowlist"
+        );
         
         boost::system::error_code ec = boost::asio::error::access_denied;
         if (close_callback) {

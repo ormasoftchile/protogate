@@ -1,5 +1,6 @@
 #include "http_proxy.h"
 #include "../observability/logger.h"
+#include "../observability/audit_logger.h"
 #include "../security/ip_allowlist.h"
 #include <sstream>
 #include <algorithm>
@@ -46,6 +47,14 @@ void HTTPProxy::handle_request(const HTTPRequest& request, response_callback cal
             {"tunnel_id", tunnel_id},
             {"client_ip", request.client_ip}
         });
+        
+        // Audit log security event
+        observability::AuditLogger::instance().log_ip_blocked(
+            tunnel_id,
+            request.client_ip,
+            "HTTP",
+            "IP not in tunnel allowlist"
+        );
         
         auto response = HTTPResponse::forbidden("IP address not allowed");
         callback(response.to_string(), false);
