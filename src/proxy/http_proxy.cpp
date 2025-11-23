@@ -46,7 +46,7 @@ void HTTPProxy::handle_request(const HTTPRequest& request, response_callback cal
             {"client_ip", request.client_ip}
         });
         
-        auto response = HTTPResponse::error(403, "IP address not allowed");
+        auto response = HTTPResponse::forbidden("IP address not allowed");
         callback(response.to_string(), false);
         log_request(tunnel_id, request, 403, 0);
         return;
@@ -281,6 +281,25 @@ HTTPProxy::HTTPResponse HTTPProxy::HTTPResponse::error(int code, const std::stri
     response.status_message = message;
     response.headers["Content-Type"] = "text/plain";
     response.body = message + "\n";
+    return response;
+}
+
+HTTPProxy::HTTPResponse HTTPProxy::HTTPResponse::forbidden(const std::string& reason) {
+    HTTPResponse response;
+    response.status_code = 403;
+    response.status_message = "Forbidden";
+    response.headers["Content-Type"] = "application/json";
+    
+    // JSON error body with structured information
+    nlohmann::json error_body = {
+        {"error", {
+            {"code", 403},
+            {"message", "Forbidden"},
+            {"reason", reason}
+        }}
+    };
+    
+    response.body = error_body.dump(2) + "\n";
     return response;
 }
 

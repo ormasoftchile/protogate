@@ -57,6 +57,7 @@ public:
         std::string to_string() const;
         
         static HTTPResponse error(int code, const std::string& message);
+        static HTTPResponse forbidden(const std::string& reason = "Access denied");
     };
 
     /**
