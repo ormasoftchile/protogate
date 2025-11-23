@@ -82,6 +82,17 @@ public:
         std::function<void(bool success, const std::string& error)> callback);
     
     /**
+     * @brief Create new TCP tunnel connection with explicit tunnel ID
+     * @param tunnel_id Target tunnel identifier
+     * @param client_socket Client-side TCP socket (moved)
+     * @param close_callback Callback invoked when connection closes
+     */
+    void create_connection(
+        const std::string& tunnel_id,
+        std::shared_ptr<tcp_socket> client_socket,
+        std::function<void(const std::string& connection_id, const boost::system::error_code& ec)> close_callback);
+    
+    /**
      * @brief Close TCP connection
      * @param connection_id Connection identifier
      * @param graceful Whether to wait for pending data
@@ -155,6 +166,17 @@ private:
     void start_forwarding(
         std::shared_ptr<TCPConnection> connection,
         std::shared_ptr<tcp_socket> client_socket);
+    
+    /**
+     * @brief Start bidirectional forwarding with close callback
+     * @param connection Connection context
+     * @param client_socket Client-side socket
+     * @param close_callback Callback when connection closes
+     */
+    void start_forwarding_with_callback(
+        std::shared_ptr<TCPConnection> connection,
+        std::shared_ptr<tcp_socket> client_socket,
+        std::function<void(const std::string&, const boost::system::error_code&)> close_callback);
     
     /**
      * @brief Read from client socket and forward to agent

@@ -43,6 +43,14 @@ struct TunnelRequest {
     uint64_t response_size_bytes = 0;
     uint32_t response_status_code = 0;      // HTTP status or 0 for TCP
     
+    // TCP connection tracking (only for TCP tunnels)
+    std::string tcp_connection_id;          // TCP connection identifier
+    uint64_t tcp_bytes_sent = 0;            // Bytes sent to agent
+    uint64_t tcp_bytes_received = 0;        // Bytes received from agent
+    uint16_t tcp_target_port = 0;           // Target port on agent side
+    std::string tcp_connection_state;       // "CONNECTING", "ESTABLISHED", "CLOSING", "CLOSED"
+    std::chrono::system_clock::time_point tcp_last_activity;  // Last data transfer time
+    
     /**
      * @brief Get request duration in milliseconds
      */

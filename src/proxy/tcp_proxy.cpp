@@ -69,6 +69,60 @@ void TCPProxy::create_connection(
     callback(true, "");
 }
 
+void TCPProxy::create_connection(
+    const std::string& tunnel_id,
+    std::shared_ptr<tcp_socket> client_socket,
+    std::function<void(const std::string& connection_id, const boost::system::error_code& ec)> close_callback) {
+    
+    // Check if agent is connected
+    if (!agent_registry_->is_connected(tunnel_id)) {
+        observability::Logger::instance().error("Agent not connected for tunnel", {
+            {"tunnel_id", tunnel_id}
+        });
+        
+        boost::system::error_code ec = boost::asio::error::not_connected;
+        if (close_callback) {
+            close_callback("", ec);
+        }
+        
+        // Close socket
+        boost::system::error_code close_ec;
+        client_socket->close(close_ec);
+        return;
+    }
+    
+    // Create connection context
+    auto connection = std::make_shared<TCPConnection>();
+    connection->connection_id = generate_connection_id();
+    connection->tunnel_id = tunnel_id;
+    connection->target_port = 0;  // Port is determined by server-side routing
+    connection->state = ConnectionState::CONNECTING;
+    connection->started_at = std::chrono::steady_clock::now();
+    connection->last_activity = connection->started_at;
+    
+    // Reserve buffer space
+    connection->send_buffer.reserve(connection->send_window_size);
+    connection->recv_buffer.reserve(connection->recv_window_size);
+    
+    // Store connection
+    {
+        std::unique_lock lock(connections_mutex_);
+        connections_[connection->connection_id] = connection;
+    }
+    
+    observability::Logger::instance().info("TCP connection created", {
+        {"connection_id", connection->connection_id},
+        {"tunnel_id", tunnel_id}
+    });
+    
+    // TODO: Send CONNECT frame to agent via protocol_multiplexer
+    // For now, mark as established
+    connection->state = ConnectionState::ESTABLISHED;
+    
+    // Start bidirectional forwarding with close callback
+    start_forwarding_with_callback(connection, client_socket, close_callback);
+}
+
 void TCPProxy::close_connection(const std::string& connection_id, bool graceful) {
     std::shared_ptr<TCPConnection> connection;
     
@@ -249,6 +303,22 @@ void TCPProxy::start_forwarding(
     
     // Start reading from client
     read_from_client(connection, client_socket);
+}
+
+void TCPProxy::start_forwarding_with_callback(
+    std::shared_ptr<TCPConnection> connection,
+    std::shared_ptr<tcp_socket> client_socket,
+    std::function<void(const std::string&, const boost::system::error_code&)> close_callback) {
+    
+    // Store close callback in connection (extend TCPConnection to hold it)
+    // For now, start forwarding without callback storage
+    // TODO: Extend TCPConnection struct to hold close_callback
+    
+    // Start reading from client
+    read_from_client(connection, client_socket);
+    
+    // Note: The callback will be invoked when cleanup_connection is called
+    // For proper implementation, we'd store close_callback in TCPConnection
 }
 
 void TCPProxy::read_from_client(

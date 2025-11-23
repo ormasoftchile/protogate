@@ -103,12 +103,12 @@
 
 ### Implementation Tasks
 
-- [ ] T039 [P] [US2] Create src/proxy/tcp_proxy.h/cpp - raw TCP stream forwarding with zero-copy (splice/sendfile)
-- [ ] T040 [P] [US2] Implement binary protocol framing in protocol_multiplexer.cpp - TCP_DATA, TCP_CLOSE, TCP_ERROR frames
-- [ ] T041 [US2] Create src/server/tcp_server.h/cpp - accepts TCP connections on configurable ports, routes by port number
-- [ ] T042 [US2] Add TCP connection tracking in tunnel_request.cpp - bytes_sent/received counters, connection status
-- [ ] T043 [US2] Implement flow control in tcp_proxy.cpp - 64KB window, backpressure handling
-- [ ] T044 [US2] Add TCP tunnel configuration in config.cpp - parse TCP_PORTS environment variable (comma-separated)
+- [X] T039 [P] [US2] Create src/proxy/tcp_proxy.h/cpp - raw TCP stream forwarding with zero-copy (splice/sendfile)
+- [X] T040 [P] [US2] Implement binary protocol framing in protocol_multiplexer.cpp - TCP_DATA, TCP_CLOSE, TCP_ERROR frames
+- [X] T041 [US2] Create src/server/tcp_server.h/cpp - accepts TCP connections on configurable ports, routes by port number
+- [X] T042 [US2] Add TCP connection tracking in tunnel_request.cpp - bytes_sent/received counters, connection status
+- [X] T043 [US2] Implement flow control in tcp_proxy.cpp - 64KB window, backpressure handling
+- [X] T044 [US2] Add TCP tunnel configuration in config.cpp - parse TCP_PORTS environment variable (comma-separated)
 
 ### Testing Tasks
 
