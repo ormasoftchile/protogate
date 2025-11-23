@@ -91,6 +91,18 @@ private:
      */
     std::optional<CertificateData> parse_pfx(const std::string& pfx_data);
 
+    /**
+     * @brief Parse PEM format certificate and key
+     * @param pem_data Combined PEM data (certificate + key) or just certificate
+     * @return Certificate data with separated cert and key
+     */
+    std::optional<CertificateData> parse_pem(const std::string& pem_data);
+
+    /**
+     * @brief Validate certificate and private key match
+     */
+    bool validate_cert_key_pair(const std::string& cert_pem, const std::string& key_pem);
+
     std::string vault_uri_;
     std::shared_ptr<void> credential_;
 };
