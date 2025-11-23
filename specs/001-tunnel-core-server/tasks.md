@@ -113,8 +113,8 @@
 ### Testing Tasks
 
 - [X] T045 [US2] Create tests/integration/tcp_tunnel_test.cpp - send 1MB data through TCP tunnel, verify byte-for-byte match
-- [ ] T046 [P] [US2] Create tests/integration/tcp_reconnect_test.cpp - simulate network interruption, verify recovery
-- [ ] T047 [US2] Create tests/performance/tcp_throughput_bench.cpp - measure Mbps with iperf3
+- [X] T046 [P] [US2] Create tests/integration/tcp_reconnect_test.cpp - simulate network interruption, verify recovery
+- [X] T047 [US2] Create tests/performance/tcp_throughput_bench.cpp - measure Mbps with iperf3
 - [X] T048 [P] [US2] Create tests/unit/tcp_proxy_test.cpp - test frame parsing, sequence numbers, connection close
 
 **Checkpoint**: ✅ User Story 2 complete - TCP tunneling functional for printer protocols
