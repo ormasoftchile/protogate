@@ -1,0 +1,49 @@
+# Build artifacts
+build/
+cmake-build-*/
+bin/
+obj/
+out/
+
+# Dependencies
+vcpkg_installed/
+node_modules/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# GitHub
+.github/
+
+# Documentation (included in source)
+*.md
+docs/
+
+# Specs and planning
+specs/
+.specify/
+
+# Environment files
+.env*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Test results
+test_results/
+coverage/
+
+# Temporary files
+*.tmp
+*.bak
+.cache/
