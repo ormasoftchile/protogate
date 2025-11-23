@@ -103,6 +103,8 @@ private:
     
     std::string level_to_string(LogLevel level) const;
     std::string get_iso8601_timestamp() const;
+    std::string get_rfc1123_date() const;
+    std::string compute_hmac_sha256(const std::string& key_base64, const std::string& data) const;
     
     LogLevel min_level_;
     std::string workspace_id_;
