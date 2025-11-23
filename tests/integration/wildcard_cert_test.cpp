@@ -198,7 +198,10 @@ TEST_F(WildcardCertTest, DISABLED_CertificateHotReload) {
     GTEST_SKIP() << "Key Vault client not yet implemented";
 }
 
-int main(int argc, char **argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+// Performance test: Reload time measurement
+TEST_F(WildcardCertTest, DISABLED_ReloadPerformance) {
+    // This test measures the time taken to reload certificates
+    // Useful for ensuring hot reload is fast enough for production
+    
+    GTEST_SKIP() << "Key Vault integration not yet implemented";
 }
