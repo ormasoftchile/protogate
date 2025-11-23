@@ -119,6 +119,18 @@ if(GTest_FOUND AND BUILD_TESTING)
         )
         add_test(NAME integration_tests COMMAND integration_tests)
     endif()
+    
+    # Security tests
+    file(GLOB_RECURSE SECURITY_TEST_SOURCES tests/security/*.cpp)
+    if(SECURITY_TEST_SOURCES)
+        add_executable(security_tests ${SECURITY_TEST_SOURCES})
+        target_link_libraries(security_tests PRIVATE
+            protogate_lib
+            GTest::gtest
+            GTest::gtest_main
+        )
+        add_test(NAME security_tests COMMAND security_tests)
+    endif()
 endif()
 
 # Performance benchmarks
