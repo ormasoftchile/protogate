@@ -39,19 +39,19 @@
 
 ⚠️ **CRITICAL**: No user story implementation can begin until this phase is complete
 
-- [ ] T009 Create src/utils/config.h/cpp - environment variable parsing (PORT, KEY_VAULT_URI, LOG_ANALYTICS_WORKSPACE_ID, DNS_ZONE)
-- [ ] T010 Create src/utils/errors.h/cpp - error types (TunnelError, AuthError, NetworkError) with std::error_code
-- [ ] T011 Create src/observability/logger.h/cpp - structured JSON logger to stdout/Log Analytics with severity levels
-- [ ] T012 [P] Create src/models/tunnel.h/cpp - Tunnel entity struct with validation methods
-- [ ] T013 [P] Create src/models/tunnel_agent.h/cpp - TunnelAgent entity struct with connection state
-- [ ] T014 [P] Create src/models/tunnel_request.h/cpp - TunnelRequest entity for in-flight tracking
-- [ ] T015 [P] Create src/models/auth_token.h/cpp - AuthToken entity with SHA-256 hashing
-- [ ] T016 [P] Create src/models/audit_event.h/cpp - AuditEvent entity for security logging
-- [ ] T017 Create src/storage/cache.h/cpp - in-memory std::unordered_map with std::shared_mutex for tunnel registry
-- [ ] T018 Create src/server/io_context_pool.h/cpp - Boost.Asio io_context thread pool (1 per CPU core)
-- [ ] T019 Create src/utils/async_utils.h/cpp - async helper utilities (awaitable wrappers, timeout handlers)
-- [ ] T020 Create tests/unit/config_test.cpp - unit tests for environment variable parsing
-- [ ] T021 [P] Create tests/unit/logger_test.cpp - unit tests for JSON log formatting
+- [X] T009 Create src/utils/config.h/cpp - environment variable parsing (PORT, KEY_VAULT_URI, LOG_ANALYTICS_WORKSPACE_ID, DNS_ZONE)
+- [X] T010 Create src/utils/errors.h/cpp - error types (TunnelError, AuthError, NetworkError) with std::error_code
+- [X] T011 Create src/observability/logger.h/cpp - structured JSON logger to stdout/Log Analytics with severity levels
+- [X] T012 [P] Create src/models/tunnel.h/cpp - Tunnel entity struct with validation methods
+- [X] T013 [P] Create src/models/tunnel_agent.h/cpp - TunnelAgent entity struct with connection state
+- [X] T014 [P] Create src/models/tunnel_request.h/cpp - TunnelRequest entity for in-flight tracking
+- [X] T015 [P] Create src/models/auth_token.h/cpp - AuthToken entity with SHA-256 hashing
+- [X] T016 [P] Create src/models/audit_event.h/cpp - AuditEvent entity for security logging
+- [X] T017 Create src/storage/cache.h/cpp - in-memory std::unordered_map with std::shared_mutex for tunnel registry
+- [X] T018 Create src/server/io_context_pool.h/cpp - Boost.Asio io_context thread pool (1 per CPU core)
+- [X] T019 Create src/utils/async_utils.h/cpp - async helper utilities (awaitable wrappers, timeout handlers)
+- [X] T020 Create tests/unit/config_test.cpp - unit tests for environment variable parsing
+- [X] T021 [P] Create tests/unit/logger_test.cpp - unit tests for JSON log formatting
 
 **Checkpoint**: ✅ Foundation ready - user story implementation can now begin in parallel
 
