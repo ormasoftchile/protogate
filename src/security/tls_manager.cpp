@@ -4,6 +4,8 @@
 #include <boost/asio/ssl/context.hpp>
 #include <shared_mutex>
 #include <algorithm>
+#include <fstream>
+#include <filesystem>
 
 namespace protogate {
 namespace security {
@@ -21,10 +23,47 @@ TLSManager::TLSManager(const std::string& key_vault_uri, boost::asio::io_context
     configure_tls_options(*default_client_context_);
     configure_tls_options(*agent_context_);
     
+    // For development with mock Key Vault, try to load local certificates
+    if (key_vault_uri.find("mock-keyvault") != std::string::npos) {
+        load_local_development_cert();
+    }
+    
     observability::Logger::instance().info("TLSManager initialized", {
         {"key_vault_uri", key_vault_uri_},
         {"auto_reload_support", io_context_ ? "enabled" : "disabled"}
     });
+}
+
+void TLSManager::load_local_development_cert() {
+    try {
+        // Try to load localhost.crt and localhost.key from current directory
+        std::filesystem::path cert_path = "localhost.crt";
+        std::filesystem::path key_path = "localhost.key";
+        
+        if (!std::filesystem::exists(cert_path) || !std::filesystem::exists(key_path)) {
+            observability::Logger::instance().warning("Local development certificates not found", {
+                {"cert_path", cert_path.string()},
+                {"key_path", key_path.string()}
+            });
+            return;
+        }
+        
+        // Load certificate and key
+        default_client_context_->use_certificate_chain_file(cert_path.string());
+        default_client_context_->use_private_key_file(key_path.string(), ssl_context::pem);
+        agent_context_->use_certificate_chain_file(cert_path.string());
+        agent_context_->use_private_key_file(key_path.string(), ssl_context::pem);
+        
+        observability::Logger::instance().info("Loaded local development certificates", {
+            {"cert_path", cert_path.string()},
+            {"key_path", key_path.string()}
+        });
+        
+    } catch (const std::exception& e) {
+        observability::Logger::instance().warning("Failed to load local development certificates", {
+            {"error", e.what()}
+        });
+    }
 }
 
 bool TLSManager::load_certificate(const std::string& secret_name, const std::string& domain) {

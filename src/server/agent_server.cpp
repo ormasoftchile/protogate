@@ -69,11 +69,44 @@ void AgentServer::do_accept() {
         return;
     }
     
-    // Check if registry is at capacity
+    // Check if registry is at capacity (T106: Connection limit enforcement)
     if (agent_registry_->is_full()) {
-        observability::Logger::instance().warning("Agent registry at capacity, rejecting connections");
-        // TODO: Implement backpressure/retry logic
-        // For now, continue accepting but will reject in handshake
+        observability::Logger::instance().warning("Agent registry at capacity, rejecting connection", {
+            {"current_capacity", std::to_string(agent_registry_->count())},
+            {"max_capacity", std::to_string(agent_registry_->max_capacity())}
+        });
+        
+        // Accept but immediately send 503 Service Unavailable and close
+        auto& io_context = io_pool_->get_io_context();
+        auto ssl_context = tls_manager_->get_agent_context();
+        auto temp_socket = std::make_shared<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>>(
+            io_context, *ssl_context);
+        
+        acceptor_.async_accept(temp_socket->lowest_layer(),
+            [this, temp_socket](const boost::system::error_code& ec) {
+                if (!ec) {
+                    // Send 503 Service Unavailable response
+                    const std::string response = 
+                        "HTTP/1.1 503 Service Unavailable\r\n"
+                        "Content-Type: text/plain\r\n"
+                        "Connection: close\r\n"
+                        "\r\n"
+                        "Server at capacity. Maximum concurrent agents reached (50).\r\n";
+                    
+                    boost::asio::async_write(*temp_socket, boost::asio::buffer(response),
+                        [temp_socket](const boost::system::error_code&, std::size_t) {
+                            // Close socket after sending response
+                            boost::system::error_code ec;
+                            temp_socket->lowest_layer().shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+                            temp_socket->lowest_layer().close(ec);
+                        });
+                }
+                
+                // Continue accepting (retry after rejection)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                do_accept();
+            });
+        return;
     }
     
     auto& io_context = io_pool_->get_io_context();

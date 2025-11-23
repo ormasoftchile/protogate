@@ -2,6 +2,7 @@
 #include "../observability/logger.h"
 #include "../observability/audit_logger.h"
 #include "../security/ip_allowlist.h"
+#include "../server/health_handler.h"
 #include <sstream>
 #include <algorithm>
 
@@ -15,6 +16,37 @@ HTTPProxy::HTTPProxy(tunnel_cache_ptr tunnel_cache, agent_registry_ptr agent_reg
 }
 
 void HTTPProxy::handle_request(const HTTPRequest& request, response_callback callback) {
+    // Handle health check endpoint
+    if (request.path == "/health") {
+        observability::Logger::instance().info("Health check request received", {
+            {"path", request.path},
+            {"client_ip", request.client_ip}
+        });
+        
+        auto health_json = server::HealthHandler::get_health_json();
+        int status_code = server::HealthHandler::get_http_status_code();
+        
+        observability::Logger::instance().info("Health check response generated", {
+            {"status_code", std::to_string(status_code)},
+            {"body_size", std::to_string(health_json.size())}
+        });
+        
+        HTTPResponse response;
+        response.status_code = status_code;
+        response.status_message = (status_code == 200) ? "OK" : "Service Unavailable";
+        response.headers["Content-Type"] = "application/json";
+        response.headers["Content-Length"] = std::to_string(health_json.size());
+        response.body = health_json;
+        
+        std::string response_str = response.to_string();
+        observability::Logger::instance().info("Calling health response callback", {
+            {"response_size", std::to_string(response_str.size())}
+        });
+        
+        callback(response_str, false);
+        return;
+    }
+    
     // Match hostname to tunnel
     std::string tunnel_id = match_tunnel(request.host);
     

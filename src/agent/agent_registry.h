@@ -69,6 +69,11 @@ public:
     bool is_full() const;
 
     /**
+     * @brief Get maximum capacity
+     */
+    size_t max_capacity() const { return max_agents_; }
+
+    /**
      * @brief Get list of all connected tunnel IDs
      */
     std::vector<std::string> get_tunnel_ids() const;

@@ -1,8 +1,8 @@
 #include <benchmark/benchmark.h>
-#include "proxy/http_proxy.h"
-#include "agent/agent_registry.h"
-#include "storage/cache.h"
-#include "models/tunnel.h"
+#include "../../src/proxy/http_proxy.h"
+#include "../../src/agent/agent_registry.h"
+#include "../../src/storage/cache.h"
+#include "../../src/models/tunnel.h"
 #include <memory>
 #include <random>
 

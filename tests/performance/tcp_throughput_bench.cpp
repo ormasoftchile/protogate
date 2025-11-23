@@ -7,7 +7,7 @@
 #include "../../src/agent/agent_registry.h"
 #include "../../src/storage/cache.h"
 #include "../../src/models/tunnel.h"
-#include "../../src/core/io_context_pool.h"
+#include "../../src/server/io_context_pool.h"
 #include <boost/asio.hpp>
 #include <thread>
 #include <vector>

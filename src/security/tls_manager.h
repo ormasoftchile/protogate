@@ -111,6 +111,11 @@ private:
      * @brief Configure SSL context with TLS 1.2+ enforcement
      */
     void configure_tls_options(ssl_context& ctx);
+    
+    /**
+     * @brief Load local development certificate for testing
+     */
+    void load_local_development_cert();
 
     /**
      * @brief Match SNI hostname to wildcard certificate domain

@@ -18,7 +18,7 @@ A high-performance, self-hosted reverse tunneling server built in C++ for exposi
 
 - **C++ Compiler**: GCC 9+ or Clang 10+ with C++17 support
 - **CMake**: 3.20 or later
-- **vcpkg**: For dependency management
+- **vcpkg**: For dependency management (automatically set up)
 - **Docker** (optional): For containerized builds
 - **Azure CLI** (optional): For Azure deployments
 
@@ -29,17 +29,35 @@ A high-performance, self-hosted reverse tunneling server built in C++ for exposi
 git clone https://github.com/ormasoftchile/protogate.git
 cd protogate
 
-# Install vcpkg (if not already installed)
-git clone https://github.com/Microsoft/vcpkg.git
-./vcpkg/bootstrap-vcpkg.sh
-export VCPKG_ROOT=$(pwd)/vcpkg
-
-# Configure and build
+# Configure and build (vcpkg is automatically detected)
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 
-# Run server
+# Run tests to verify build
+./build/unit_tests
+./build/integration_tests
+
+# Run server (requires configuration)
 ./build/protogate-server
+```
+
+### Environment Configuration
+
+Create a `.env` file with required variables:
+
+```bash
+# Required
+KEY_VAULT_URI=https://your-keyvault.vault.azure.net/
+DNS_ZONE=tunnel.example.com
+
+# Optional
+PORT=443
+AGENT_PORT=8443
+LOG_ANALYTICS_WORKSPACE_ID=<workspace-id>
+LOG_ANALYTICS_KEY=<workspace-key>
+TCP_PORTS=9100,9200  # Additional TCP ports
+LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR
+MAX_AGENTS=50  # Maximum concurrent tunnel agents
 ```
 
 ### Build with Docker
@@ -48,24 +66,61 @@ cmake --build build --parallel
 # Build container image
 docker build -t protogate-server:latest -f docker/Dockerfile.alpine .
 
-# Run server
+# Run with environment variables
 docker run -p 443:443 -p 8443:8443 \
   -e PORT=443 \
   -e AGENT_PORT=8443 \
-  -e KEY_VAULT_URI=https://your-vault.vault.azure.net \
+  -e KEY_VAULT_URI=https://your-vault.vault.azure.net/ \
+  -e DNS_ZONE=tunnel.example.com \
   protogate-server:latest
 ```
 
-### Deploy to Azure
+### Deploy to Azure (Production)
 
-See [quickstart.md](specs/001-tunnel-core-server/quickstart.md) for detailed Azure deployment instructions using Bicep.
+Full Azure deployment with Container Apps, Key Vault, DNS Zone, and Log Analytics:
 
 ```bash
+# Navigate to deployment directory
 cd deploy/azure
-az deployment group create \
-  --resource-group protogate-rg \
-  --template-file main.bicep \
-  --parameters @parameters.json
+
+# Log in to Azure
+az login
+
+# Create resource group
+az group create --name protogate-prod --location eastus
+
+# Deploy infrastructure (choose environment)
+./deploy.sh protogate-prod eastus production
+
+# Generate and store tunnel token
+../scripts/generate-token.sh \
+  --tunnel-id my-first-tunnel \
+  --resource-group protogate-prod \
+  --vault-name protogate-kv-prod
+```
+
+See [deploy/azure/README.md](deploy/azure/README.md) and [docs/quickstart.md](specs/001-tunnel-core-server/quickstart.md) for detailed deployment instructions.
+
+### Test Your Deployment
+
+```bash
+# Create a tunnel
+curl -X POST https://api.tunnel.example.com/v1/tunnels \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tunnel_id": "my-app",
+    "protocol": "HTTP",
+    "target": "localhost:8080"
+  }'
+
+# Verify tunnel is accessible
+curl https://my-app.tunnel.example.com/health
+
+# View tunnel metrics
+curl https://api.tunnel.example.com/v1/tunnels/my-app/metrics
+
+# Delete tunnel
+curl -X DELETE https://api.tunnel.example.com/v1/tunnels/my-app
 ```
 
 ## Configuration
@@ -130,6 +185,282 @@ cmake --build build --target unit_tests
 - **No Secrets in Logs**: Tokens, credentials, and payload data never logged
 
 See [docs/security.md](docs/security.md) for complete threat model and security controls.
+
+## Troubleshooting
+
+### Build Issues
+
+**Problem**: `vcpkg not found` error during CMake configuration
+
+```bash
+# Solution: Set vcpkg root explicitly
+export VCPKG_ROOT=/path/to/vcpkg
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+```
+
+**Problem**: Missing dependencies (Boost, OpenSSL, nlohmann-json)
+
+```bash
+# Solution: Install via vcpkg (automatic during build)
+./vcpkg/vcpkg install boost-asio boost-beast openssl nlohmann-json
+
+# Or use system packages (Debian/Ubuntu)
+sudo apt-get install libboost-dev libssl-dev nlohmann-json3-dev
+
+# Or use system packages (macOS)
+brew install boost openssl nlohmann-json
+```
+
+**Problem**: C++17 not supported by compiler
+
+```bash
+# Solution: Upgrade compiler
+# Ubuntu/Debian
+sudo apt-get install g++-9
+
+# macOS
+brew install llvm
+```
+
+### Runtime Issues
+
+**Problem**: `Connection refused` when accessing tunnel
+
+```bash
+# Check server is running
+docker ps  # or: ps aux | grep protogate-server
+
+# Check server logs
+docker logs protogate-container  # or: journalctl -u protogate
+
+# Verify ports are accessible
+nc -zv tunnel.example.com 443
+nc -zv tunnel.example.com 8443
+
+# Check firewall rules
+sudo iptables -L -n | grep 443
+```
+
+**Problem**: `No tunnel found for hostname` error
+
+```bash
+# Verify tunnel exists
+curl https://api.tunnel.example.com/v1/tunnels
+
+# Check DNS resolution
+nslookup my-app.tunnel.example.com
+dig my-app.tunnel.example.com
+
+# Verify DNS wildcard record
+nslookup *.tunnel.example.com
+```
+
+**Problem**: `Token validation failed: not found`
+
+```bash
+# Generate new token
+cd deploy/scripts
+./generate-token.sh --tunnel-id my-app --resource-group protogate-prod --vault-name protogate-kv
+
+# Verify token is in Key Vault
+az keyvault secret show \
+  --vault-name protogate-kv \
+  --name tunnel-token-my-app
+
+# Check token format (should be 256-bit base64)
+echo "token-value" | base64 -d | wc -c  # Should be 32 bytes
+```
+
+**Problem**: `Failed to load certificate from Key Vault`
+
+```bash
+# Check certificate exists
+az keyvault certificate show \
+  --vault-name protogate-kv \
+  --name wildcard-tunnel-example-com
+
+# Verify managed identity has access
+az keyvault set-policy \
+  --vault-name protogate-kv \
+  --object-id <managed-identity-id> \
+  --certificate-permissions get list \
+  --secret-permissions get list
+
+# Check certificate format (must be PEM)
+az keyvault certificate download \
+  --vault-name protogate-kv \
+  --name wildcard-tunnel-example-com \
+  --file cert.pem
+openssl x509 -in cert.pem -text -noout
+```
+
+**Problem**: High latency or slow performance
+
+```bash
+# Check server metrics
+curl https://api.tunnel.example.com/v1/metrics
+
+# Monitor resource usage
+docker stats protogate-container
+# Or: top -p $(pidof protogate-server)
+
+# Check Azure Container App scaling
+az containerapp show \
+  --name protogate \
+  --resource-group protogate-prod \
+  --query "properties.template.scale"
+
+# Enable AddressSanitizer for memory leak detection
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug
+./build/protogate-server
+```
+
+**Problem**: `IP blocked by allowlist` errors
+
+```bash
+# Check tunnel allowlist configuration
+curl https://api.tunnel.example.com/v1/tunnels/my-app | jq '.allowlist'
+
+# Update allowlist via API
+curl -X PUT https://api.tunnel.example.com/v1/tunnels/my-app/allowlist \
+  -H "Content-Type: application/json" \
+  -d '{
+    "allowlist": [
+      "192.168.1.0/24",
+      "10.0.0.0/8",
+      "203.0.113.45/32"
+    ]
+  }'
+
+# Test IP allowlist matching
+curl -X POST https://api.tunnel.example.com/v1/test-allowlist \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tunnel_id": "my-app",
+    "source_ip": "192.168.1.100"
+  }'
+```
+
+### Azure-Specific Issues
+
+**Problem**: `Managed identity authentication failed`
+
+```bash
+# Verify managed identity is enabled
+az containerapp show \
+  --name protogate \
+  --resource-group protogate-prod \
+  --query "identity"
+
+# Check Key Vault access policies
+az keyvault show \
+  --name protogate-kv \
+  --query "properties.accessPolicies"
+
+# Test managed identity token acquisition
+curl 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net' \
+  -H "Metadata: true"
+```
+
+**Problem**: `Log Analytics not receiving logs`
+
+```bash
+# Verify workspace credentials
+az monitor log-analytics workspace show \
+  --resource-group protogate-prod \
+  --workspace-name protogate-logs
+
+# Check environment variables
+az containerapp show \
+  --name protogate \
+  --resource-group protogate-prod \
+  --query "properties.template.containers[0].env"
+
+# Query logs manually
+az monitor log-analytics query \
+  --workspace <workspace-id> \
+  --analytics-query "ContainerAppConsoleLogs_CL | where ContainerAppName_s == 'protogate' | order by TimeGenerated desc | limit 100"
+```
+
+**Problem**: `DNS resolution not working`
+
+```bash
+# Verify DNS Zone exists
+az network dns zone show \
+  --name tunnel.example.com \
+  --resource-group protogate-prod
+
+# Check NS records are delegated
+dig NS tunnel.example.com
+
+# Verify CNAME wildcard record
+az network dns record-set cname show \
+  --zone-name tunnel.example.com \
+  --resource-group protogate-prod \
+  --name '*'
+
+# Test DNS propagation
+nslookup test.tunnel.example.com 8.8.8.8
+```
+
+### Debugging Tips
+
+**Enable debug logging:**
+
+```bash
+# Set environment variable
+export LOG_LEVEL=DEBUG
+
+# Or in Docker
+docker run -e LOG_LEVEL=DEBUG ...
+
+# Or in Azure Container Apps
+az containerapp update \
+  --name protogate \
+  --resource-group protogate-prod \
+  --set-env-vars "LOG_LEVEL=DEBUG"
+```
+
+**Run static analysis:**
+
+```bash
+# Enable clang-tidy
+cmake -B build -S . -DENABLE_CLANG_TIDY=ON
+cmake --build build
+
+# Enable cppcheck
+cmake -B build -S . -DENABLE_CPPCHECK=ON
+cmake --build build
+
+# Run both
+cmake -B build -S . -DENABLE_CLANG_TIDY=ON -DENABLE_CPPCHECK=ON
+cmake --build build
+```
+
+**Memory leak detection:**
+
+```bash
+# Build with AddressSanitizer (automatically enabled in Debug)
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
+./build/protogate-server
+
+# Or use valgrind
+valgrind --leak-check=full --show-leak-kinds=all ./build/protogate-server
+```
+
+**Network debugging:**
+
+```bash
+# Capture TLS handshake
+tcpdump -i any -nn -s0 -X port 443
+
+# Monitor connections
+ss -tpn | grep protogate-server
+
+# Check open file descriptors
+lsof -p $(pidof protogate-server) | wc -l
+```
 
 ## Documentation
 

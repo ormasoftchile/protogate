@@ -39,6 +39,41 @@ if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
         CACHE STRING "")
 endif()
 
+# Static analysis tools
+option(ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)
+option(ENABLE_CPPCHECK "Enable cppcheck static analysis" OFF)
+
+if(ENABLE_CLANG_TIDY)
+    find_program(CLANG_TIDY_EXE NAMES "clang-tidy")
+    if(CLANG_TIDY_EXE)
+        set(CMAKE_CXX_CLANG_TIDY 
+            ${CLANG_TIDY_EXE};
+            -checks=bugprone-*,cert-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,performance-*,portability-*,readability-*;
+            -warnings-as-errors=*;
+        )
+        message(STATUS "clang-tidy enabled: ${CLANG_TIDY_EXE}")
+    else()
+        message(WARNING "clang-tidy requested but not found")
+    endif()
+endif()
+
+if(ENABLE_CPPCHECK)
+    find_program(CPPCHECK_EXE NAMES "cppcheck")
+    if(CPPCHECK_EXE)
+        set(CMAKE_CXX_CPPCHECK 
+            ${CPPCHECK_EXE};
+            --enable=warning,style,performance,portability;
+            --inconclusive;
+            --inline-suppr;
+            --suppress=missingIncludeSystem;
+            --std=c++17;
+        )
+        message(STATUS "cppcheck enabled: ${CPPCHECK_EXE}")
+    else()
+        message(WARNING "cppcheck requested but not found")
+    endif()
+endif()
+
 # Find required packages
 # Boost 1.89+ no longer requires component specification for header-only libs
 find_package(Boost 1.70 REQUIRED)
