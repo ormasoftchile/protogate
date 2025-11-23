@@ -94,6 +94,13 @@ public:
      */
     bool is_auto_reload_active() const { return auto_reload_active_; }
 
+    /**
+     * @brief Check if a certificate is available for the given domain
+     * @param domain Domain name to check (supports wildcard matching)
+     * @return true if a certificate is available for this domain
+     */
+    bool has_certificate_for_domain(const std::string& domain) const;
+
 private:
     /**
      * @brief Create SSL context from certificate data
@@ -119,7 +126,7 @@ private:
     std::unordered_map<std::string, Certificate> certificates_; // domain -> cert
     ssl_context_ptr default_client_context_;
     ssl_context_ptr agent_context_;
-    std::shared_mutex mutex_; // Protect certificate map during hot reload
+    mutable std::shared_mutex mutex_; // Protect certificate map during hot reload (mutable for const methods)
     
     // Auto-reload support
     boost::asio::io_context* io_context_;

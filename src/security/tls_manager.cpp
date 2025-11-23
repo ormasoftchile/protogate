@@ -315,5 +315,18 @@ void TLSManager::schedule_reload() {
     });
 }
 
+bool TLSManager::has_certificate_for_domain(const std::string& domain) const {
+    std::shared_lock lock(mutex_);
+    
+    // Check for exact match first
+    if (certificates_.find(domain) != certificates_.end()) {
+        return true;
+    }
+    
+    // Check for wildcard match
+    std::string matched_domain = match_certificate(domain);
+    return !matched_domain.empty();
+}
+
 }  // namespace security
 }  // namespace protogate
