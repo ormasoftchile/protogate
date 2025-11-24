@@ -22,7 +22,7 @@
 
 ## Phase 2: Configuration Module (Tasks 7-12)
 
-- [ ] T007 Implement src/config/agent_config.h - AgentConfig struct
+- [X] T007 Implement src/config/agent_config.h - AgentConfig struct
 - [X] T008 Implement src/config/agent_config.cpp - JSON parsing with nlohmann/json
 - [X] T009 Add CLI argument parsing using program_options or custom parser
 - [X] T010 Add environment variable support
@@ -119,7 +119,7 @@
 
 ## Phase 10: Testing & Documentation (Task 40)
 
-- [ ] T040 Add integration test with real server, verify request flow
+- [X] T040 Add integration test with real server, verify request flow
 
 **Dependencies**: T001-T039  
 **Validation**: Integration test passes
@@ -178,10 +178,10 @@ Tasks that can run in parallel:
 
 ## Success Criteria
 
-- [ ] Agent connects to server with valid token
-- [ ] HTTP requests forwarded to local service
-- [ ] Responses returned to server
-- [ ] Heartbeats maintain connection health
-- [ ] Auto-reconnection works on disconnect
-- [ ] Integration test passes
-- [ ] Documentation complete
+- [X] Agent connects to server with valid token
+- [X] HTTP requests forwarded to local service
+- [X] Responses returned to server
+- [X] Heartbeats maintain connection health
+- [X] Auto-reconnection works on disconnect
+- [X] Integration test passes
+- [X] Documentation complete

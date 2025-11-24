@@ -1,0 +1,28 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 8443,
+    "verify_tls": false
+  },
+  "tunnel": {
+    "id": "api",
+    "token": "tnl_test_token_123"
+  },
+  "local": {
+    "url": "http://localhost:3000",
+    "timeout_seconds": 30
+  },
+  "health": {
+    "heartbeat_interval_seconds": 30,
+    "heartbeat_timeout_seconds": 60
+  },
+  "reconnect": {
+    "initial_delay_seconds": 1,
+    "max_delay_seconds": 60,
+    "max_attempts": 0
+  },
+  "logging": {
+    "level": "info",
+    "format": "json"
+  }
+}

@@ -17,9 +17,24 @@ A C++17 client for the Protogate reverse tunnel server. Enables secure access to
 
 - CMake 3.20+
 - C++17 compiler (GCC 9+, Clang 10+, MSVC 2019+)
-- vcpkg for dependency management
+- Homebrew (macOS) or vcpkg (Windows/Linux) for dependencies
 
-### Build Steps
+### macOS Build (Homebrew)
+
+```bash
+# Install dependencies
+brew install cmake boost openssl nghttp2 nlohmann-json spdlog
+
+# Clone and build
+cd protogate/tunnel-agent
+cmake -B build -S . -DCMAKE_PREFIX_PATH=/opt/homebrew
+cmake --build build --config Release
+
+# Run
+./build/tunnel-agent --config config.json
+```
+
+### Linux/Windows Build (vcpkg)
 
 ```bash
 # Clone repository
