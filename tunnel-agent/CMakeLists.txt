@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Remove vcpkg toolchain requirement - use system packages
+if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+endif()
+
 project(protogate-tunnel-agent VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -13,9 +19,10 @@ elseif(MSVC)
 endif()
 
 # Find packages
-find_package(Boost REQUIRED COMPONENTS system filesystem program_options)
+find_package(Boost REQUIRED COMPONENTS filesystem program_options)
 find_package(OpenSSL REQUIRED)
-find_package(nghttp2 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(NGHTTP2 REQUIRED libnghttp2)
 find_package(nlohmann_json REQUIRED)
 find_package(spdlog REQUIRED)
 
@@ -39,14 +46,24 @@ target_include_directories(tunnel_agent_lib PUBLIC
 )
 
 target_link_libraries(tunnel_agent_lib PUBLIC
-    Boost::system
     Boost::filesystem
     Boost::program_options
     OpenSSL::SSL
     OpenSSL::Crypto
-    nghttp2::nghttp2
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+)
+
+target_include_directories(tunnel_agent_lib PUBLIC
+    ${NGHTTP2_INCLUDE_DIRS}
+)
+
+target_link_directories(tunnel_agent_lib PUBLIC
+    ${NGHTTP2_LIBRARY_DIRS}
+)
+
+target_link_libraries(tunnel_agent_lib PUBLIC
+    ${NGHTTP2_LINK_LIBRARIES}
 )
 
 # Main executable

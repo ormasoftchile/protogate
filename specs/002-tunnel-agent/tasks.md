@@ -23,10 +23,10 @@
 ## Phase 2: Configuration Module (Tasks 7-12)
 
 - [ ] T007 Implement src/config/agent_config.h - AgentConfig struct
-- [ ] T008 Implement src/config/agent_config.cpp - JSON parsing with nlohmann/json
-- [ ] T009 Add CLI argument parsing using program_options or custom parser
-- [ ] T010 Add environment variable support
-- [ ] T011 Add configuration validation
+- [X] T008 Implement src/config/agent_config.cpp - JSON parsing with nlohmann/json
+- [X] T009 Add CLI argument parsing using program_options or custom parser
+- [X] T010 Add environment variable support
+- [X] T011 Add configuration validation
 - [ ] T012 Add unit tests for configuration (tests/test_config.cpp)
 
 **Dependencies**: T001-T006  
@@ -36,8 +36,8 @@
 
 ## Phase 3: Logging Module (Tasks 13-14)
 
-- [ ] T013 Implement src/utils/logger.h/cpp - Wrapper around spdlog
-- [ ] T014 Add structured logging (JSON format, log levels)
+- [X] T013 Implement src/utils/logger.h/cpp - Wrapper around spdlog
+- [X] T014 Add structured logging (JSON format, log levels)
 
 **Dependencies**: T001-T006  
 **Validation**: Log messages output correctly
@@ -46,10 +46,10 @@
 
 ## Phase 4: TLS Client (Tasks 15-20)
 
-- [ ] T015 Implement src/client/tls_client.h - TLSClient class skeleton
-- [ ] T016 Add Boost.Asio SSL socket setup
-- [ ] T017 Add TLS handshake with certificate verification
-- [ ] T018 Add connection error handling and logging
+- [X] T015 Implement src/client/tls_client.h - TLSClient class skeleton
+- [X] T016 Add Boost.Asio SSL socket setup
+- [X] T017 Add TLS handshake with certificate verification
+- [X] T018 Add connection error handling and logging
 - [ ] T019 Add graceful connection close
 - [ ] T020 Add unit tests for TLS client
 
@@ -60,12 +60,12 @@
 
 ## Phase 5: HTTP/2 Session (Tasks 21-27)
 
-- [ ] T021 Implement src/client/http2_session.h - HTTP2Session class
-- [ ] T022 Initialize nghttp2 session
-- [ ] T023 Implement CONNECT handshake with Authorization header
-- [ ] T024 Add server response validation (200 vs 401/403)
-- [ ] T025 Add HTTP/2 frame send/receive callbacks
-- [ ] T026 Add stream event handling
+- [X] T021 Implement src/client/http2_session.h - HTTP2Session class
+- [X] T022 Initialize nghttp2 session
+- [X] T023 Implement CONNECT handshake with Authorization header
+- [X] T024 Add server response validation (200 vs 401/403)
+- [X] T025 Add HTTP/2 frame send/receive callbacks
+- [X] T026 Add stream event handling
 - [ ] T027 Add unit tests for HTTP/2 session
 
 **Dependencies**: T015-T020  
@@ -75,12 +75,12 @@
 
 ## Phase 6: Request Forwarding (Tasks 28-33)
 
-- [ ] T028 Implement src/forwarder/request_forwarder.h - RequestForwarder class
-- [ ] T029 Add HTTP/2 stream request parsing (headers + body)
-- [ ] T030 Implement HTTP client for local service using Boost.Beast
-- [ ] T031 Add request forwarding with header preservation
-- [ ] T032 Implement response capture and HTTP/2 encoding
-- [ ] T033 Add error response generation (502, 504)
+- [X] T028 Implement src/forwarder/request_forwarder.h - RequestForwarder class
+- [X] T029 Add HTTP/2 stream request parsing (headers + body)
+- [X] T030 Implement HTTP client for local service using Boost.Beast
+- [X] T031 Add request forwarding with header preservation
+- [X] T032 Implement response capture and HTTP/2 encoding
+- [X] T033 Add error response generation (502, 504)
 
 **Dependencies**: T021-T027  
 **Validation**: End-to-end request flow works
@@ -89,9 +89,9 @@
 
 ## Phase 7: Health Monitoring (Tasks 34-36)
 
-- [ ] T034 Implement src/health/heartbeat.h/cpp - HeartbeatManager class
-- [ ] T035 Add HTTP/2 PING frame sending (every 30 seconds)
-- [ ] T036 Add PING ACK timeout detection (60 seconds)
+- [X] T034 Implement src/health/heartbeat.h/cpp - HeartbeatManager class
+- [X] T035 Add HTTP/2 PING frame sending (every 30 seconds)
+- [X] T036 Add PING ACK timeout detection (60 seconds)
 
 **Dependencies**: T021-T027  
 **Validation**: Heartbeats sent, connection closes on timeout
@@ -100,8 +100,8 @@
 
 ## Phase 8: Reconnection Logic (Tasks 37-38)
 
-- [ ] T037 Implement src/utils/reconnect.h/cpp - ReconnectionManager class
-- [ ] T038 Add exponential backoff reconnection (1s, 2s, 4s, ..., max 60s)
+- [X] T037 Implement src/utils/reconnect.h/cpp - ReconnectionManager class
+- [X] T038 Add exponential backoff reconnection (1s, 2s, 4s, ..., max 60s)
 
 **Dependencies**: T034-T036  
 **Validation**: Agent reconnects after disconnect
@@ -110,7 +110,7 @@
 
 ## Phase 9: Main Entry Point (Task 39)
 
-- [ ] T039 Implement src/main.cpp - Parse config, start client, run event loop
+- [X] T039 Implement src/main.cpp - Parse config, start client, run event loop
 
 **Dependencies**: All previous tasks  
 **Validation**: `./tunnel-agent --config config.json` runs end-to-end

@@ -2,6 +2,8 @@
 
 #include <string>
 #include <memory>
+#include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 
 namespace protogate {
 namespace agent {
@@ -15,11 +17,18 @@ public:
     void disconnect();
     bool is_connected() const;
     
+    boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& socket();
+    boost::asio::io_context& io_context();
+    
 private:
     std::string host_;
     unsigned short port_;
     bool verify_tls_;
     bool connected_;
+    
+    std::unique_ptr<boost::asio::io_context> io_context_;
+    std::unique_ptr<boost::asio::ssl::context> ssl_context_;
+    std::unique_ptr<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> socket_;
 };
 
 }  // namespace agent

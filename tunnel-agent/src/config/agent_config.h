@@ -49,6 +49,8 @@ struct AgentConfig {
     static AgentConfig from_json_file(const std::string& path);
     static AgentConfig from_cli_args(int argc, char* argv[]);
     static AgentConfig from_environment();
+    
+    void validate() const;
 };
 
 }  // namespace agent
