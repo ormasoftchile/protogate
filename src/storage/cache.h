@@ -52,7 +52,7 @@ public:
      * @brief Get a value from the cache
      * @return std::nullopt if key not found or expired
      */
-    std::optional<Value> get(const Key& key) {
+    std::optional<Value> get(const Key& key) const {
         std::shared_lock lock(mutex_);
         auto it = cache_.find(key);
         
@@ -125,7 +125,7 @@ public:
     /**
      * @brief Apply a function to all non-expired entries
      */
-    void for_each(std::function<void(const Key&, const Value&)> func) {
+    void for_each(std::function<void(const Key&, const Value&)> func) const {
         std::shared_lock lock(mutex_);
         for (const auto& [key, entry] : cache_) {
             if (!entry.is_expired()) {

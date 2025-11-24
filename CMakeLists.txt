@@ -81,6 +81,10 @@ find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
+# Find nghttp2 using pkg-config
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(NGHTTP2 REQUIRED libnghttp2)
+
 # Optional packages for full build
 find_package(GTest)
 find_package(benchmark)
@@ -90,6 +94,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${Boost_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
+    ${NGHTTP2_INCLUDE_DIRS}
 )
 
 # Source files for main server
@@ -116,7 +121,10 @@ target_link_libraries(protogate_lib PUBLIC
     OpenSSL::SSL
     OpenSSL::Crypto
     nlohmann_json::nlohmann_json
+    ${NGHTTP2_LINK_LIBRARIES}
 )
+target_include_directories(protogate_lib PUBLIC ${NGHTTP2_INCLUDE_DIRS})
+target_link_directories(protogate_lib PUBLIC ${NGHTTP2_LIBRARY_DIRS})
 
 # Main executable
 add_executable(protogate-server src/server/main.cpp)

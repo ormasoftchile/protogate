@@ -51,6 +51,12 @@ private:
     
     std::map<int32_t, HTTP2Request> pending_requests_;
     
+    // Keep header strings alive for nghttp2
+    std::string auth_header_name_;
+    std::string auth_header_value_;
+    std::string tunnel_header_name_;
+    std::string version_header_name_;
+    
     void send_connect_request();
     void send_data();
     void receive_data();

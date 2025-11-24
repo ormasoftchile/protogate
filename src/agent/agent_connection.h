@@ -4,6 +4,7 @@
 #include "../utils/async_utils.h"
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
+#include <nghttp2/nghttp2.h>
 #include <memory>
 #include <string>
 #include <functional>
@@ -49,6 +50,13 @@ public:
     AgentConnection(boost::asio::io_context& io_context,
                    boost::asio::ssl::context& ssl_context,
                    const std::string& tunnel_id);
+
+    /**
+     * @brief Create agent connection from existing authenticated socket
+     * @param socket Existing TLS socket (already authenticated)
+     * @param tunnel_id Tunnel identifier
+     */
+    AgentConnection(ssl_socket&& socket, const std::string& tunnel_id);
 
     /**
      * @brief Start TLS handshake and authentication
@@ -140,11 +148,53 @@ private:
      */
     void handle_disconnect();
 
+    /**
+     * @brief Initialize nghttp2 session
+     */
+    void initialize_nghttp2();
+
+    /**
+     * @brief Send pending HTTP/2 data
+     */
+    void send_pending_data();
+
+    /**
+     * @brief nghttp2 callback - send data
+     */
+    static ssize_t send_callback(nghttp2_session* session, const uint8_t* data,
+                                 size_t length, int flags, void* user_data);
+
+    /**
+     * @brief nghttp2 callback - frame received
+     */
+    static int on_frame_recv_callback(nghttp2_session* session,
+                                      const nghttp2_frame* frame, void* user_data);
+
+    /**
+     * @brief nghttp2 callback - header received
+     */
+    static int on_header_callback(nghttp2_session* session, const nghttp2_frame* frame,
+                                  const uint8_t* name, size_t namelen,
+                                  const uint8_t* value, size_t valuelen,
+                                  uint8_t flags, void* user_data);
+
+    /**
+     * @brief nghttp2 callback - data chunk received
+     */
+    static int on_data_chunk_recv_callback(nghttp2_session* session, uint8_t flags,
+                                           int32_t stream_id, const uint8_t* data,
+                                           size_t len, void* user_data);
+
     boost::asio::io_context& io_context_;
     ssl_socket socket_;
     std::string tunnel_id_;
     State state_;
     disconnect_callback on_disconnect_;
+    
+    // HTTP/2 session
+    nghttp2_session* http2_session_;
+    std::vector<uint8_t> send_buffer_;
+    std::array<uint8_t, 16384> recv_buffer_;
     
     // Heartbeat timer
     boost::asio::steady_timer heartbeat_timer_;
@@ -158,6 +208,10 @@ private:
     // Request tracking
     std::unordered_map<std::string, request_callback> pending_requests_;
     std::mutex requests_mutex_;
+    
+    // Stream data buffers
+    std::unordered_map<int32_t, std::string> stream_headers_;
+    std::unordered_map<int32_t, std::string> stream_bodies_;
 };
 
 }  // namespace agent

@@ -2,6 +2,7 @@
 #include "../utils/logger.h"
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <openssl/ssl.h>
 
 namespace protogate {
 namespace agent {
@@ -13,6 +14,34 @@ TLSClient::TLSClient(const std::string& host, unsigned short port, bool verify_t
     
     ssl_context_ = std::make_unique<boost::asio::ssl::context>(
         boost::asio::ssl::context::tls_client);
+    
+    // Set TLS options to match server requirements
+    ssl_context_->set_options(
+        boost::asio::ssl::context::default_workarounds |
+        boost::asio::ssl::context::no_sslv2 |
+        boost::asio::ssl::context::no_sslv3 |
+        boost::asio::ssl::context::no_tlsv1 |
+        boost::asio::ssl::context::no_tlsv1_1
+    );
+    
+    // Set minimum TLS version (TLS 1.2)
+    SSL_CTX_set_min_proto_version(ssl_context_->native_handle(), TLS1_2_VERSION);
+    
+    // Set cipher suites to match server (ECDHE with AES-GCM)
+    SSL_CTX_set_cipher_list(ssl_context_->native_handle(),
+        "ECDHE-ECDSA-AES256-GCM-SHA384:"
+        "ECDHE-RSA-AES256-GCM-SHA384:"
+        "ECDHE-ECDSA-AES128-GCM-SHA256:"
+        "ECDHE-RSA-AES128-GCM-SHA256"
+    );
+    
+    // Set ALPN protocols - prefer HTTP/2, fallback to HTTP/1.1
+    // Note: Server needs ALPN support too for proper HTTP/2 negotiation
+    const unsigned char alpn_protos[] = {
+        2, 'h', '2',           // HTTP/2
+        8, 'h', 't', 't', 'p', '/', '1', '.', '1'  // HTTP/1.1 fallback
+    };
+    SSL_CTX_set_alpn_protos(ssl_context_->native_handle(), alpn_protos, sizeof(alpn_protos));
     
     if (verify_tls) {
         ssl_context_->set_default_verify_paths();
@@ -114,6 +143,23 @@ boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& TLSClient::socket() {
 
 boost::asio::io_context& TLSClient::io_context() {
     return *io_context_;
+}
+
+std::string TLSClient::get_alpn_protocol() const {
+    if (!socket_) {
+        return "";
+    }
+    
+    const unsigned char* alpn_data = nullptr;
+    unsigned int alpn_len = 0;
+    
+    SSL_get0_alpn_selected(socket_->native_handle(), &alpn_data, &alpn_len);
+    
+    if (alpn_data && alpn_len > 0) {
+        return std::string(reinterpret_cast<const char*>(alpn_data), alpn_len);
+    }
+    
+    return "";
 }
 
 }  // namespace agent

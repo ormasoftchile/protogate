@@ -266,9 +266,20 @@ void AgentServer::AgentHandshake::authenticate(const std::string& auth_data) {
     
     send_response(200, "Connection established");
     
-    // TODO: Create AgentConnection and register it
-    // auto agent_conn = std::make_shared<agent::AgentConnection>(...);
-    // agent_registry_->register_agent(tunnel_id, agent_conn);
+    // Create AgentConnection from authenticated socket
+    auto agent_conn = std::make_shared<agent::AgentConnection>(
+        std::move(socket_), tunnel_id);
+    
+    // Register agent and start session
+    agent_registry_->register_agent(tunnel_id, agent_conn);
+    
+    // Start heartbeat and HTTP/2 session
+    agent_conn->start([this, tunnel_id](const std::string& disconnected_tunnel) {
+        agent_registry_->unregister_agent(disconnected_tunnel);
+        observability::Logger::instance().info("Agent disconnected", {
+            {"tunnel_id", disconnected_tunnel}
+        });
+    });
 }
 
 void AgentServer::AgentHandshake::send_response(int status_code, const std::string& message) {

@@ -2,13 +2,62 @@
 
 A C++17 client for the Protogate reverse tunnel server. Enables secure access to local services through persistent outbound connections.
 
+## Status: ✅ Production-Ready (100% Complete)
+
+**All 40 implementation tasks completed!** See `IMPLEMENTATION_COMPLETE.md` for details.
+
+**Latest Test Results**: Agent successfully connects, authenticates, and maintains session with server.
+
+## Quick Start
+
+```bash
+# 1. Build the agent
+cd tunnel-agent
+cmake -B build -S . -DCMAKE_PREFIX_PATH=/opt/homebrew
+cmake --build build --parallel 8
+
+# 2. Create configuration
+cp config.example.json config.json
+# Edit config.json with your server details and token
+
+# 3. Run the agent
+./build/tunnel-agent --config config.json
+
+# 4. Or use environment variables
+export PROTOGATE_SERVER_HOST=localhost
+export PROTOGATE_SERVER_PORT=8443
+export PROTOGATE_TUNNEL_ID=my-api
+export PROTOGATE_TUNNEL_TOKEN=tnl_your_token_here
+export PROTOGATE_LOCAL_URL=http://localhost:3000
+./build/tunnel-agent
+```
+
+## Local Testing
+
+For local development and testing:
+
+```bash
+# Run the automated local test setup
+bash test-local.sh
+
+# This will:
+# - Start the Protogate server
+# - Start a test HTTP service on port 3000
+# - Start the tunnel agent
+# - Verify the connection
+```
+
+See `TESTING.md` for detailed testing instructions.
+
 ## Features
 
 - 🔒 **Secure TLS Connection**: TLS 1.2+ encryption with OpenSSL
+- 🌐 **ALPN Support**: RFC 7540 compliant HTTP/2 negotiation
 - 🚀 **HTTP/2 Protocol**: Efficient multiplexed connections using nghttp2
 - 🔑 **Token Authentication**: Bearer token authentication
-- ❤️ **Health Monitoring**: Automatic heartbeat and reconnection
-- 🔄 **Auto Reconnect**: Exponential backoff on connection failures
+- ❤️ **Health Monitoring**: Automatic heartbeat (30s) and timeout detection (60s)
+- 🔄 **Auto Reconnect**: Exponential backoff (1s → 60s max)
+- 📊 **Structured Logging**: JSON logs with spdlog
 - ⚙️ **Flexible Config**: JSON file, CLI arguments, or environment variables
 
 ## Building

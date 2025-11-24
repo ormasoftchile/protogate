@@ -20,6 +20,9 @@ public:
     boost::asio::ssl::stream<boost::asio::ip::tcp::socket>& socket();
     boost::asio::io_context& io_context();
     
+    // Get negotiated ALPN protocol (empty if none)
+    std::string get_alpn_protocol() const;
+    
 private:
     std::string host_;
     unsigned short port_;

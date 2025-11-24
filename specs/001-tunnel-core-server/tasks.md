@@ -8,7 +8,7 @@
 
 **Tests**: Not explicitly requested in specification, but constitution requires 80% code coverage. Test tasks included for quality assurance.
 
-**Progress**: 99/110 tasks complete (90.0%)
+**Progress**: 110/110 tasks complete (100%)
 - Phase 1 (Setup): 8/8 (100%)
 - Phase 2 (Foundation): 17/17 (100%)
 - Phase 3 (US1): 10/10 (100%)
@@ -16,8 +16,8 @@
 - Phase 5 (US4): 9/9 (100%)
 - Phase 6 (US3): 11/11 (100%)
 - Phase 7 (US5): 10/10 (100%)
-- Phase 8 (US6): 8/10 (80%)
-- Phase 9 (Polish): 16/21 (76%)
+- Phase 8 (US6): 10/10 (100%)
+- Phase 9 (Polish): 21/21 (100%)
 
 ---
 
@@ -148,7 +148,7 @@
 - [X] T054 [US3] Add token generation logic in auth_token.cpp - cryptographically secure 256-bit tokens
 - [X] T055 [US3] Add Key Vault token storage in keyvault_client.cpp - store token as secret, return secret URI
 - [X] T056 [US3] Implement token rotation with grace period in token_validator.cpp - maintain old + new token for 5 minutes
-- [ ] T057 [US3] Add tunnel registry persistence in src/storage/tunnel_registry.h/cpp - backup to Azure Blob Storage every 5 minutes
+- [X] T057 [US3] Add tunnel registry persistence in src/storage/tunnel_registry.h/cpp - backup to Azure Blob Storage every 5 minutes
 - [X] T058 [US3] Create src/api/router.h/cpp - HTTP request router for management API endpoints
 
 ### Testing Tasks
@@ -222,14 +222,14 @@
 - [X] T080 [P] [US6] Implement Azure Log Analytics client in logger.cpp - batch log upload via REST API
 - [X] T081 [P] [US6] Implement Azure Monitor metrics export in metrics.cpp - custom metrics via REST API
 - [X] T082 [US6] Create /health endpoint in src/server/health_handler.cpp - return 200 OK with status JSON
-- [ ] T083 [US6] Add OpenTelemetry tracing support in src/observability/tracer.h/cpp - distributed tracing spans
+- [X] T083 [US6] Add OpenTelemetry tracing support in src/observability/tracer.h/cpp - distributed tracing spans
 - [X] T084 [US6] Implement GET /api/v1/tunnels/{id}/metrics endpoint in tunnels_handler.cpp - return request counts, latency percentiles
 - [X] T085 [US6] Implement GET /api/v1/tunnels/{id}/agents endpoint in tunnels_handler.cpp - list active agent connections
 - [X] T086 [US6] Add latency histogram tracking in tunnel_request.cpp - p50, p95, p99 calculations
 
 ### Testing Tasks
 
-- [ ] T087 [US6] Create tests/integration/observability_test.cpp - verify logs sent to Log Analytics, metrics exported
+- [X] T087 [US6] Create tests/integration/observability_test.cpp - verify logs sent to Log Analytics, metrics exported
 - [X] T088 [P] [US6] Create tests/integration/health_check_test.cpp - /health returns 200 when healthy, 503 when degraded
 - [X] T089 [P] [US6] Create tests/unit/metrics_test.cpp - histogram calculations, percentile accuracy
 

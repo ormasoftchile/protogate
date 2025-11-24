@@ -12,7 +12,8 @@
     },
     "files.associations": {
         "optional": "cpp",
-        "vector": "cpp"
+        "vector": "cpp",
+        "string": "cpp"
     }
 }
 

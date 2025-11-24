@@ -74,6 +74,20 @@ int main(int argc, char* argv[]) {
         
         LOG_INFO("Token validator initialized");
         
+        // For local testing with mock Key Vault, add a test token
+        if (config.key_vault_uri.find("mock-keyvault") != std::string::npos) {
+            models::AuthToken test_token;
+            test_token.token_hash = security::TokenValidator::compute_token_hash("tnl_local_test_123");
+            test_token.created_at = std::chrono::system_clock::now();
+            test_token.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
+            
+            token_validator->add_token("test-api", test_token, std::chrono::hours(24));
+            
+            LOG_INFO("Test token added for local testing", {
+                {"tunnel_id", "test-api"}
+            });
+        }
+        
         // Initialize agent registry
         auto agent_registry = std::make_shared<agent::AgentRegistry>(50);
         

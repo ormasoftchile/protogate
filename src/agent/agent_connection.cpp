@@ -12,6 +12,7 @@ AgentConnection::AgentConnection(
       socket_(io_context, ssl_context),
       tunnel_id_(tunnel_id),
       state_(State::CONNECTING),
+      http2_session_(nullptr),
       heartbeat_timer_(io_context),
       bytes_sent_(0),
       bytes_received_(0),
@@ -22,9 +23,37 @@ AgentConnection::AgentConnection(
     });
 }
 
+AgentConnection::AgentConnection(ssl_socket&& socket, const std::string& tunnel_id)
+    : io_context_(static_cast<boost::asio::io_context&>(socket.lowest_layer().get_executor().context())),
+      socket_(std::move(socket)),
+      tunnel_id_(tunnel_id),
+      state_(State::CONNECTED),  // Already authenticated
+      http2_session_(nullptr),
+      heartbeat_timer_(io_context_),
+      bytes_sent_(0),
+      bytes_received_(0),
+      connected_at_(std::chrono::system_clock::now()) {
+    
+    observability::Logger::instance().info("AgentConnection created from authenticated socket", {
+        {"tunnel_id", tunnel_id_}
+    });
+}
+
 void AgentConnection::start(disconnect_callback on_disconnect) {
     on_disconnect_ = std::move(on_disconnect);
-    do_handshake();
+    
+    if (state_ == State::CONNECTED) {
+        // Already authenticated, start session directly
+        observability::Logger::instance().info("Starting authenticated session", {
+            {"tunnel_id", tunnel_id_}
+        });
+        initialize_nghttp2();
+        start_heartbeat();
+        start_read();
+    } else {
+        // Need to perform handshake
+        do_handshake();
+    }
 }
 
 void AgentConnection::do_handshake() {
@@ -47,6 +76,7 @@ void AgentConnection::do_handshake() {
             });
             
             state_ = State::CONNECTED;
+            initialize_nghttp2();
             start_heartbeat();
             start_read();
         });
@@ -81,23 +111,200 @@ void AgentConnection::send_heartbeat() {
             return;
         }
         
-        // TODO: Send HTTP/2 PING frame or binary heartbeat frame
-        observability::Logger::instance().debug("Sending heartbeat", {
-            {"tunnel_id", tunnel_id_}
-        });
+        // Send HTTP/2 PING frame
+        if (http2_session_) {
+            uint8_t ping_data[8] = {0};
+            nghttp2_submit_ping(http2_session_, NGHTTP2_FLAG_NONE, ping_data);
+            send_pending_data();
+            
+            observability::Logger::instance().debug("Sending heartbeat PING", {
+                {"tunnel_id", tunnel_id_}
+            });
+        }
         
         // Schedule next heartbeat
         send_heartbeat();
     });
 }
 
-void AgentConnection::start_read() {
-    // TODO: Implement async read loop for HTTP/2 or binary protocol
-    // This will be implemented with nghttp2 integration
+void AgentConnection::initialize_nghttp2() {
+    nghttp2_session_callbacks* callbacks;
+    nghttp2_session_callbacks_new(&callbacks);
     
-    observability::Logger::instance().debug("Started read loop", {
+    nghttp2_session_callbacks_set_send_callback(callbacks, send_callback);
+    nghttp2_session_callbacks_set_on_frame_recv_callback(callbacks, on_frame_recv_callback);
+    nghttp2_session_callbacks_set_on_header_callback(callbacks, on_header_callback);
+    nghttp2_session_callbacks_set_on_data_chunk_recv_callback(callbacks, on_data_chunk_recv_callback);
+    
+    nghttp2_session_server_new(&http2_session_, callbacks, this);
+    nghttp2_session_callbacks_del(callbacks);
+    
+    // Send initial SETTINGS frame
+    nghttp2_settings_entry settings[] = {
+        {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100},
+        {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535}
+    };
+    nghttp2_submit_settings(http2_session_, NGHTTP2_FLAG_NONE, settings, 2);
+    send_pending_data();
+    
+    observability::Logger::instance().info("HTTP/2 session initialized", {
         {"tunnel_id", tunnel_id_}
     });
+}
+
+void AgentConnection::send_pending_data() {
+    const uint8_t* data;
+    while (true) {
+        ssize_t len = nghttp2_session_mem_send(http2_session_, &data);
+        if (len <= 0) break;
+        
+        send_buffer_.insert(send_buffer_.end(), data, data + len);
+    }
+    
+    if (!send_buffer_.empty()) {
+        auto self = shared_from_this();
+        boost::asio::async_write(socket_, boost::asio::buffer(send_buffer_),
+            [this, self](const boost::system::error_code& ec, std::size_t bytes) {
+                if (ec) {
+                    observability::Logger::instance().error("Send error", {
+                        {"tunnel_id", tunnel_id_},
+                        {"error", ec.message()}
+                    });
+                    close();
+                    return;
+                }
+                
+                bytes_sent_ += bytes;
+                send_buffer_.clear();
+            });
+    }
+}
+
+ssize_t AgentConnection::send_callback(nghttp2_session* session, const uint8_t* data,
+                                       size_t length, int flags, void* user_data) {
+    auto* conn = static_cast<AgentConnection*>(user_data);
+    conn->send_buffer_.insert(conn->send_buffer_.end(), data, data + length);
+    return static_cast<ssize_t>(length);
+}
+
+int AgentConnection::on_frame_recv_callback(nghttp2_session* session,
+                                            const nghttp2_frame* frame, void* user_data) {
+    auto* conn = static_cast<AgentConnection*>(user_data);
+    
+    switch (frame->hd.type) {
+        case NGHTTP2_PING:
+            if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+                conn->last_heartbeat_ = std::chrono::steady_clock::now();
+                observability::Logger::instance().debug("PING ACK received", {
+                    {"tunnel_id", conn->tunnel_id_}
+                });
+            }
+            break;
+            
+        case NGHTTP2_HEADERS:
+            if (frame->headers.cat == NGHTTP2_HCAT_REQUEST) {
+                observability::Logger::instance().debug("Request headers received", {
+                    {"tunnel_id", conn->tunnel_id_},
+                    {"stream_id", std::to_string(frame->hd.stream_id)}
+                });
+            }
+            break;
+            
+        case NGHTTP2_DATA:
+            observability::Logger::instance().debug("Data frame received", {
+                {"tunnel_id", conn->tunnel_id_},
+                {"stream_id", std::to_string(frame->hd.stream_id)},
+                {"length", std::to_string(frame->hd.length)}
+            });
+            break;
+            
+        case NGHTTP2_GOAWAY:
+            observability::Logger::instance().info("GOAWAY received", {
+                {"tunnel_id", conn->tunnel_id_}
+            });
+            conn->close();
+            break;
+    }
+    
+    return 0;
+}
+
+int AgentConnection::on_header_callback(nghttp2_session* session, const nghttp2_frame* frame,
+                                        const uint8_t* name, size_t namelen,
+                                        const uint8_t* value, size_t valuelen,
+                                        uint8_t flags, void* user_data) {
+    auto* conn = static_cast<AgentConnection*>(user_data);
+    
+    std::string header_name(reinterpret_cast<const char*>(name), namelen);
+    std::string header_value(reinterpret_cast<const char*>(value), valuelen);
+    
+    // Store headers for this stream
+    conn->stream_headers_[frame->hd.stream_id] += header_name + ": " + header_value + "\r\n";
+    
+    observability::Logger::instance().debug("Header received", {
+        {"tunnel_id", conn->tunnel_id_},
+        {"stream_id", std::to_string(frame->hd.stream_id)},
+        {"name", header_name},
+        {"value", header_value}
+    });
+    
+    return 0;
+}
+
+int AgentConnection::on_data_chunk_recv_callback(nghttp2_session* session, uint8_t flags,
+                                                 int32_t stream_id, const uint8_t* data,
+                                                 size_t len, void* user_data) {
+    auto* conn = static_cast<AgentConnection*>(user_data);
+    
+    // Store data for this stream
+    conn->stream_bodies_[stream_id].append(reinterpret_cast<const char*>(data), len);
+    
+    observability::Logger::instance().debug("Data chunk received", {
+        {"tunnel_id", conn->tunnel_id_},
+        {"stream_id", std::to_string(stream_id)},
+        {"length", std::to_string(len)}
+    });
+    
+    return 0;
+}
+
+void AgentConnection::start_read() {
+    auto self = shared_from_this();
+    
+    socket_.async_read_some(boost::asio::buffer(recv_buffer_),
+        [this, self](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+            if (ec) {
+                if (ec != boost::asio::error::eof) {
+                    observability::Logger::instance().error("Read error", {
+                        {"tunnel_id", tunnel_id_},
+                        {"error", ec.message()}
+                    });
+                }
+                close();
+                return;
+            }
+            
+            bytes_received_ += bytes_transferred;
+            
+            // Feed data to nghttp2
+            ssize_t rv = nghttp2_session_mem_recv(http2_session_, 
+                                                  recv_buffer_.data(), 
+                                                  bytes_transferred);
+            if (rv < 0) {
+                observability::Logger::instance().error("nghttp2 error", {
+                    {"tunnel_id", tunnel_id_},
+                    {"error", nghttp2_strerror(static_cast<int>(rv))}
+                });
+                close();
+                return;
+            }
+            
+            // Send any pending responses
+            send_pending_data();
+            
+            // Continue reading
+            start_read();
+        });
 }
 
 void AgentConnection::send_http_request(
@@ -193,6 +400,12 @@ void AgentConnection::close() {
     
     state_ = State::DISCONNECTING;
     heartbeat_timer_.cancel();
+    
+    // Clean up nghttp2 session
+    if (http2_session_) {
+        nghttp2_session_del(http2_session_);
+        http2_session_ = nullptr;
+    }
     
     boost::system::error_code ec;
     socket_.shutdown(ec);

@@ -1,6 +1,9 @@
 #include "http2_session.h"
 #include "../utils/logger.h"
 #include <cstring>
+#include <sstream>
+#include <boost/asio/write.hpp>
+#include <boost/asio/read.hpp>
 #include <stdexcept>
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
@@ -19,6 +22,62 @@ HTTP2Session::~HTTP2Session() {
 void HTTP2Session::start(RequestCallback on_request) {
     on_request_ = on_request;
     
+    // Check if HTTP/2 was negotiated via ALPN
+    std::string alpn_protocol = tls_client_.get_alpn_protocol();
+    
+    Logger::info("Starting session", {
+        {"alpn_protocol", alpn_protocol.empty() ? "none" : alpn_protocol}
+    });
+    
+    // Server MVP doesn't support ALPN yet, so we use HTTP/1.1 auth for compatibility
+    // TODO: Remove this fallback once server implements proper HTTP/2 with ALPN
+    if (alpn_protocol != "h2") {
+        Logger::info("Using HTTP/1.1 authentication (server MVP compatibility mode)");
+        
+        // Send HTTP/1.1 authentication headers (temporary for server MVP)
+        std::ostringstream auth_request;
+        auth_request << "CONNECT tunnel-agent HTTP/1.1\r\n"
+                     << "Host: tunnel-agent\r\n"
+                     << "Authorization: Bearer " << token_ << "\r\n"
+                     << "X-Tunnel-ID: " << tunnel_id_ << "\r\n"
+                     << "X-Agent-Version: 1.0.0\r\n"
+                     << "\r\n";
+        
+        std::string auth_str = auth_request.str();
+        boost::system::error_code ec;
+        boost::asio::write(tls_client_.socket(), boost::asio::buffer(auth_str), ec);
+        
+        if (ec) {
+            throw std::runtime_error("Failed to send authentication: " + ec.message());
+        }
+        
+        Logger::info("Sent HTTP/1.1 authentication");
+        
+        // Read authentication response
+        char response_buffer[1024];
+        size_t bytes_read = tls_client_.socket().read_some(boost::asio::buffer(response_buffer), ec);
+        
+        if (ec && ec != boost::asio::error::eof) {
+            throw std::runtime_error("Failed to read auth response: " + ec.message());
+        }
+        
+        std::string response(response_buffer, bytes_read);
+        Logger::info("Received auth response", {
+            {"response", response.substr(0, std::min<size_t>(100, response.size()))}
+        });
+        
+        // Check if authentication succeeded
+        if (response.find("200") == std::string::npos && response.find("Connection Established") == std::string::npos) {
+            throw std::runtime_error("Authentication failed: " + response);
+        }
+    }
+    // When server supports ALPN and h2, use proper HTTP/2 CONNECT:
+    // else {
+    //     Logger::info("Using HTTP/2 with ALPN");
+    //     // HTTP/2 connection preface already sent by nghttp2
+    //     // Authentication will be in the CONNECT request headers
+    // }
+    
     // Initialize nghttp2 session
     nghttp2_session_callbacks* callbacks;
     nghttp2_session_callbacks_new(&callbacks);
@@ -36,9 +95,6 @@ void HTTP2Session::start(RequestCallback on_request) {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}
     };
     nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, iv, 1);
-    
-    // Send CONNECT request for tunnel authentication
-    send_connect_request();
     
     // Send pending frames
     send_data();
@@ -89,19 +145,20 @@ void HTTP2Session::send_connect_request() {
     const char* path_val = "/";
     hdrs.push_back({(uint8_t*)path, (uint8_t*)path_val, strlen(path), strlen(path_val), NGHTTP2_NV_FLAG_NONE});
     
-    std::string auth_header = "authorization";
-    std::string auth_value = "Bearer " + token_;
-    hdrs.push_back({(uint8_t*)auth_header.c_str(), (uint8_t*)auth_value.c_str(), 
-                   auth_header.size(), auth_value.size(), NGHTTP2_NV_FLAG_NONE});
+    // Store header strings as member variables to keep them alive
+    auth_header_name_ = "authorization";
+    auth_header_value_ = "Bearer " + token_;
+    hdrs.push_back({(uint8_t*)auth_header_name_.c_str(), (uint8_t*)auth_header_value_.c_str(), 
+                   auth_header_name_.size(), auth_header_value_.size(), NGHTTP2_NV_FLAG_NONE});
     
-    std::string tunnel_header = "x-tunnel-id";
-    hdrs.push_back({(uint8_t*)tunnel_header.c_str(), (uint8_t*)tunnel_id_.c_str(), 
-                   tunnel_header.size(), tunnel_id_.size(), NGHTTP2_NV_FLAG_NONE});
+    tunnel_header_name_ = "x-tunnel-id";
+    hdrs.push_back({(uint8_t*)tunnel_header_name_.c_str(), (uint8_t*)tunnel_id_.c_str(), 
+                   tunnel_header_name_.size(), tunnel_id_.size(), NGHTTP2_NV_FLAG_NONE});
     
-    std::string version_header = "x-agent-version";
+    version_header_name_ = "x-agent-version";
     const char* version_val = "1.0.0";
-    hdrs.push_back({(uint8_t*)version_header.c_str(), (uint8_t*)version_val, 
-                   version_header.size(), strlen(version_val), NGHTTP2_NV_FLAG_NONE});
+    hdrs.push_back({(uint8_t*)version_header_name_.c_str(), (uint8_t*)version_val, 
+                   version_header_name_.size(), strlen(version_val), NGHTTP2_NV_FLAG_NONE});
     
     int32_t stream_id = nghttp2_submit_request(session_, nullptr, hdrs.data(), hdrs.size(), nullptr, nullptr);
     
