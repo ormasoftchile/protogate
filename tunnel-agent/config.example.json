@@ -1,0 +1,28 @@
+{
+  "server": {
+    "host": "tunnel-agent.tunnel.mycorp.com",
+    "port": 8443,
+    "verify_tls": true
+  },
+  "tunnel": {
+    "id": "api",
+    "token": "tnl_abc123..."
+  },
+  "local": {
+    "url": "http://localhost:3000",
+    "timeout_seconds": 1800
+  },
+  "health": {
+    "heartbeat_interval_seconds": 30,
+    "heartbeat_timeout_seconds": 60
+  },
+  "reconnect": {
+    "initial_delay_seconds": 1,
+    "max_delay_seconds": 60,
+    "max_attempts": 0
+  },
+  "logging": {
+    "level": "info",
+    "format": "json"
+  }
+}

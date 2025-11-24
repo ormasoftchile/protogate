@@ -1,147 +1,151 @@
-# Tunnel Agent - Implementation Tasks
+# Tunnel Agent - Implementation Tasks (C++)
 
 **Feature**: 002-tunnel-agent  
-**Total Tasks**: 35  
-**Estimated Time**: 2-3 weeks
+**Total Tasks**: 40  
+**Estimated Time**: 3 weeks
 
 ---
 
-## Phase 1: Project Setup (Tasks 1-5)
+## Phase 1: Project Setup (Tasks 1-6)
 
-- [X] T001 Create tunnel-agent directory structure with Python package layout
-- [X] T002 Create requirements.txt with dependencies (h2, httpx, pyyaml, click)
-- [X] T003 Create setup.py for package installation
-- [X] T004 Create README.md with quick start instructions
-- [X] T005 Create tunnel-agent.yaml.example configuration template
+- [X] T001 Create tunnel-agent/ directory with CMake structure
+- [X] T002 Create CMakeLists.txt with Boost, nghttp2, OpenSSL dependencies
+- [X] T003 Create vcpkg.json for dependency management
+- [X] T004 Create README.md with build instructions
+- [X] T005 Create config.example.json configuration template
+- [X] T006 Verify build system works (empty main.cpp compiles)
 
 **Dependencies**: None  
-**Validation**: `python setup.py install` succeeds, imports work
+**Validation**: `cmake --build build` succeeds
 
 ---
 
-## Phase 2: Configuration Module (Tasks 6-10)
+## Phase 2: Configuration Module (Tasks 7-12)
 
-- [ ] T006 Implement agent/config.py - Config class with YAML parsing
-- [ ] T007 Add CLI argument parsing in config.py using click
-- [ ] T008 Add environment variable support (TUNNEL_TOKEN, TUNNEL_ID, etc.)
-- [ ] T009 Add config validation (required fields, format checks)
-- [ ] T010 Add unit tests for configuration loading (test_config.py)
+- [ ] T007 Implement src/config/agent_config.h - AgentConfig struct
+- [ ] T008 Implement src/config/agent_config.cpp - JSON parsing with nlohmann/json
+- [ ] T009 Add CLI argument parsing using program_options or custom parser
+- [ ] T010 Add environment variable support
+- [ ] T011 Add configuration validation
+- [ ] T012 Add unit tests for configuration (tests/test_config.cpp)
 
-**Dependencies**: T001-T005  
-**Validation**: All config tests pass, CLI --help works
-
----
-
-## Phase 3: TLS & HTTP/2 Client (Tasks 11-18)
-
-- [ ] T011 Implement agent/client.py - TunnelClient class skeleton
-- [ ] T012 Add TLS connection logic using ssl module
-- [ ] T013 Add HTTP/2 session setup using h2 library
-- [ ] T014 Implement authentication handshake (CONNECT request)
-- [ ] T015 Add server response validation (200 vs 401/403)
-- [ ] T016 Add connection error handling and logging
-- [ ] T017 Add graceful connection close method
-- [ ] T018 Add unit tests for client connection (test_client.py)
-
-**Dependencies**: T006-T010  
-**Validation**: Agent connects to local server, auth succeeds/fails correctly
+**Dependencies**: T001-T006  
+**Validation**: Config tests pass, CLI --help works
 
 ---
 
-## Phase 4: Request Forwarding (Tasks 19-25)
+## Phase 3: Logging Module (Tasks 13-14)
 
-- [ ] T019 Implement agent/forwarder.py - RequestForwarder class
-- [ ] T020 Add HTTP/2 stream event handler in client.py
-- [ ] T021 Implement request parsing from HTTP/2 frames
-- [ ] T022 Add HTTP request forwarding to local service using httpx
-- [ ] T023 Implement response capture and HTTP/2 frame encoding
-- [ ] T024 Add request/response logging with request IDs
-- [ ] T025 Add error response generation (502, 504)
+- [ ] T013 Implement src/utils/logger.h/cpp - Wrapper around spdlog
+- [ ] T014 Add structured logging (JSON format, log levels)
 
-**Dependencies**: T011-T018  
-**Validation**: End-to-end request flow works (server → agent → local → agent → server)
+**Dependencies**: T001-T006  
+**Validation**: Log messages output correctly
 
 ---
 
-## Phase 5: Health & Monitoring (Tasks 26-30)
+## Phase 4: TLS Client (Tasks 15-20)
 
-- [ ] T026 Implement agent/heartbeat.py - HeartbeatManager class
-- [ ] T027 Add PING frame sending every 30 seconds
-- [ ] T028 Add PING ACK timeout detection (60 seconds)
-- [ ] T029 Add connection health state tracking
-- [ ] T030 Add health status logging
+- [ ] T015 Implement src/client/tls_client.h - TLSClient class skeleton
+- [ ] T016 Add Boost.Asio SSL socket setup
+- [ ] T017 Add TLS handshake with certificate verification
+- [ ] T018 Add connection error handling and logging
+- [ ] T019 Add graceful connection close
+- [ ] T020 Add unit tests for TLS client
 
-**Dependencies**: T011-T018  
+**Dependencies**: T007-T014  
+**Validation**: Agent connects to server with TLS
+
+---
+
+## Phase 5: HTTP/2 Session (Tasks 21-27)
+
+- [ ] T021 Implement src/client/http2_session.h - HTTP2Session class
+- [ ] T022 Initialize nghttp2 session
+- [ ] T023 Implement CONNECT handshake with Authorization header
+- [ ] T024 Add server response validation (200 vs 401/403)
+- [ ] T025 Add HTTP/2 frame send/receive callbacks
+- [ ] T026 Add stream event handling
+- [ ] T027 Add unit tests for HTTP/2 session
+
+**Dependencies**: T015-T020  
+**Validation**: Agent authenticates with server successfully
+
+---
+
+## Phase 6: Request Forwarding (Tasks 28-33)
+
+- [ ] T028 Implement src/forwarder/request_forwarder.h - RequestForwarder class
+- [ ] T029 Add HTTP/2 stream request parsing (headers + body)
+- [ ] T030 Implement HTTP client for local service using Boost.Beast
+- [ ] T031 Add request forwarding with header preservation
+- [ ] T032 Implement response capture and HTTP/2 encoding
+- [ ] T033 Add error response generation (502, 504)
+
+**Dependencies**: T021-T027  
+**Validation**: End-to-end request flow works
+
+---
+
+## Phase 7: Health Monitoring (Tasks 34-36)
+
+- [ ] T034 Implement src/health/heartbeat.h/cpp - HeartbeatManager class
+- [ ] T035 Add HTTP/2 PING frame sending (every 30 seconds)
+- [ ] T036 Add PING ACK timeout detection (60 seconds)
+
+**Dependencies**: T021-T027  
 **Validation**: Heartbeats sent, connection closes on timeout
 
 ---
 
-## Phase 6: Reconnection Logic (Tasks 31-33)
+## Phase 8: Reconnection Logic (Tasks 37-38)
 
-- [ ] T031 Implement agent/reconnect.py - ReconnectionManager class
-- [ ] T032 Add exponential backoff logic (1s, 2s, 4s, ..., max 60s)
-- [ ] T033 Add reconnection loop with max attempts handling
+- [ ] T037 Implement src/utils/reconnect.h/cpp - ReconnectionManager class
+- [ ] T038 Add exponential backoff reconnection (1s, 2s, 4s, ..., max 60s)
 
-**Dependencies**: T026-T030  
-**Validation**: Agent reconnects after disconnect, backoff timing correct
+**Dependencies**: T034-T036  
+**Validation**: Agent reconnects after disconnect
 
 ---
 
-## Phase 7: CLI & Entry Point (Tasks 34-35)
+## Phase 9: Main Entry Point (Task 39)
 
-- [ ] T034 Implement agent/main.py - CLI entry point with click
-- [ ] T035 Add signal handling (SIGINT, SIGTERM) for graceful shutdown
+- [ ] T039 Implement src/main.cpp - Parse config, start client, run event loop
 
 **Dependencies**: All previous tasks  
-**Validation**: `python -m agent --help` works, agent runs end-to-end
+**Validation**: `./tunnel-agent --config config.json` runs end-to-end
 
 ---
 
-## Phase 8: Testing (Tasks 36-40)
+## Phase 10: Testing & Documentation (Task 40)
 
-- [ ] T036 Create tests/test_forwarder.py - Request forwarding tests
-- [ ] T037 Create tests/test_heartbeat.py - Heartbeat tests
-- [ ] T038 Create tests/test_reconnect.py - Reconnection tests
-- [ ] T039 Create integration test with real server
-- [ ] T040 Run all tests, ensure >80% coverage
+- [ ] T040 Add integration test with real server, verify request flow
 
-**Dependencies**: T001-T035  
-**Validation**: `pytest` passes all tests, coverage report generated
-
----
-
-## Phase 9: Documentation & Packaging (Tasks 41-45)
-
-- [ ] T041 Write README.md with installation instructions
-- [ ] T042 Write QUICKSTART.md with usage examples
-- [ ] T043 Add example configurations for common scenarios
-- [ ] T044 Create scripts/build.sh for building distributable
-- [ ] T045 Create scripts/install.sh for system installation
-
-**Dependencies**: T001-T040  
-**Validation**: Documentation complete, install script works
+**Dependencies**: T001-T039  
+**Validation**: Integration test passes
 
 ---
 
 ## Task Dependencies Graph
 
 ```
-T001-T005 (Setup)
+T001-T006 (Setup)
     ↓
-T006-T010 (Config)
-    ↓
-T011-T018 (TLS/HTTP2)
-    ↓
-    ├─→ T019-T025 (Forwarding)
-    └─→ T026-T030 (Health)
+    ├─→ T007-T012 (Config)
+    └─→ T013-T014 (Logging)
             ↓
-        T031-T033 (Reconnect)
+        T015-T020 (TLS)
             ↓
-        T034-T035 (CLI)
+        T021-T027 (HTTP/2)
             ↓
-        T036-T040 (Testing)
-            ↓
-        T041-T045 (Docs)
+            ├─→ T028-T033 (Forwarding)
+            └─→ T034-T036 (Heartbeat)
+                    ↓
+                T037-T038 (Reconnect)
+                    ↓
+                T039 (Main)
+                    ↓
+                T040 (Testing)
 ```
 
 ---
@@ -149,8 +153,8 @@ T011-T018 (TLS/HTTP2)
 ## Parallel Execution
 
 Tasks that can run in parallel:
-- T006-T010 [P] (Config module independent)
-- T019-T025 and T026-T030 [P] (After client is ready)
+- T007-T012 and T013-T014 [P] (Config and Logging independent)
+- T028-T033 and T034-T036 [P] (After HTTP/2 is ready)
 
 ---
 
@@ -158,16 +162,17 @@ Tasks that can run in parallel:
 
 | Phase | Tasks | Days |
 |-------|-------|------|
-| 1. Setup | T001-T005 | 0.5 |
-| 2. Config | T006-T010 | 1 |
-| 3. Client | T011-T018 | 3 |
-| 4. Forwarding | T019-T025 | 3 |
-| 5. Health | T026-T030 | 2 |
-| 6. Reconnect | T031-T033 | 1 |
-| 7. CLI | T034-T035 | 0.5 |
-| 8. Testing | T036-T040 | 2 |
-| 9. Docs | T041-T045 | 1 |
-| **Total** | **45 tasks** | **14 days** |
+| 1. Setup | T001-T006 | 1 |
+| 2. Config | T007-T012 | 2 |
+| 3. Logging | T013-T014 | 0.5 |
+| 4. TLS | T015-T020 | 3 |
+| 5. HTTP/2 | T021-T027 | 4 |
+| 6. Forwarding | T028-T033 | 3 |
+| 7. Health | T034-T036 | 1.5 |
+| 8. Reconnect | T037-T038 | 1 |
+| 9. Main | T039 | 0.5 |
+| 10. Testing | T040 | 0.5 |
+| **Total** | **40 tasks** | **17 days** |
 
 ---
 
@@ -178,5 +183,5 @@ Tasks that can run in parallel:
 - [ ] Responses returned to server
 - [ ] Heartbeats maintain connection health
 - [ ] Auto-reconnection works on disconnect
-- [ ] All tests pass with >80% coverage
+- [ ] Integration test passes
 - [ ] Documentation complete
