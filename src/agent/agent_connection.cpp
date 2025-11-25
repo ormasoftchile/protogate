@@ -1,5 +1,7 @@
 #include "agent_connection.h"
 #include "../observability/logger.h"
+#include <sstream>
+#include <algorithm>
 
 namespace protogate {
 namespace agent {
@@ -36,6 +38,20 @@ AgentConnection::AgentConnection(ssl_socket&& socket, const std::string& tunnel_
     
     observability::Logger::instance().info("AgentConnection created from authenticated socket", {
         {"tunnel_id", tunnel_id_}
+    });
+    
+    // Set socket to non-blocking for async operations
+    socket_.lowest_layer().non_blocking(true);
+    
+    // Verify executor
+    auto& executor_context = static_cast<boost::asio::io_context&>(
+        socket_.lowest_layer().get_executor().context());
+    
+    observability::Logger::instance().info("Socket set to non-blocking mode", {
+        {"tunnel_id", tunnel_id_},
+        {"socket_executor_addr", std::to_string(reinterpret_cast<uintptr_t>(&executor_context))},
+        {"member_io_context_addr", std::to_string(reinterpret_cast<uintptr_t>(&io_context_))},
+        {"match", (&executor_context == &io_context_) ? "YES" : "NO"}
     });
 }
 
@@ -136,10 +152,11 @@ void AgentConnection::initialize_nghttp2() {
     nghttp2_session_callbacks_set_on_header_callback(callbacks, on_header_callback);
     nghttp2_session_callbacks_set_on_data_chunk_recv_callback(callbacks, on_data_chunk_recv_callback);
     
-    nghttp2_session_server_new(&http2_session_, callbacks, this);
+    // After CONNECT, server acts as HTTP/2 client to send requests to agent
+    nghttp2_session_client_new(&http2_session_, callbacks, this);
     nghttp2_session_callbacks_del(callbacks);
     
-    // Send initial SETTINGS frame
+    // Send HTTP/2 connection preface and SETTINGS
     nghttp2_settings_entry settings[] = {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100},
         {NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE, 65535}
@@ -153,38 +170,65 @@ void AgentConnection::initialize_nghttp2() {
 }
 
 void AgentConnection::send_pending_data() {
-    const uint8_t* data;
-    while (true) {
-        ssize_t len = nghttp2_session_mem_send(http2_session_, &data);
-        if (len <= 0) break;
-        
-        send_buffer_.insert(send_buffer_.end(), data, data + len);
-    }
-    
-    if (!send_buffer_.empty()) {
-        auto self = shared_from_this();
-        boost::asio::async_write(socket_, boost::asio::buffer(send_buffer_),
-            [this, self](const boost::system::error_code& ec, std::size_t bytes) {
-                if (ec) {
-                    observability::Logger::instance().error("Send error", {
-                        {"tunnel_id", tunnel_id_},
-                        {"error", ec.message()}
-                    });
-                    close();
-                    return;
-                }
-                
-                bytes_sent_ += bytes;
-                send_buffer_.clear();
-            });
+    // nghttp2 will call send_callback which handles actual transmission
+    // This method just triggers nghttp2 to flush its buffers
+    int rv = nghttp2_session_send(http2_session_);
+    if (rv != 0) {
+        observability::Logger::instance().error("nghttp2_session_send failed", {
+            {"tunnel_id", tunnel_id_},
+            {"error", nghttp2_strerror(rv)}
+        });
+        close();
     }
 }
 
 ssize_t AgentConnection::send_callback(nghttp2_session* session, const uint8_t* data,
                                        size_t length, int flags, void* user_data) {
     auto* conn = static_cast<AgentConnection*>(user_data);
-    conn->send_buffer_.insert(conn->send_buffer_.end(), data, data + length);
-    return static_cast<ssize_t>(length);
+    (void)session;
+    (void)flags;
+    
+    observability::Logger::instance().info("send_callback invoked", {
+        {"tunnel_id", conn->tunnel_id_},
+        {"bytes", std::to_string(length)}
+    });
+    
+    try {
+        boost::system::error_code ec;
+        size_t written = conn->socket_.write_some(
+            boost::asio::buffer(data, length), ec);
+        
+        if (ec == boost::asio::error::would_block || ec == boost::asio::error::try_again) {
+            observability::Logger::instance().info("send_callback would block", {
+                {"tunnel_id", conn->tunnel_id_}
+            });
+            return NGHTTP2_ERR_WOULDBLOCK;
+        }
+        
+        if (ec) {
+            observability::Logger::instance().error("Send callback error", {
+                {"tunnel_id", conn->tunnel_id_},
+                {"error", ec.message()}
+            });
+            return NGHTTP2_ERR_CALLBACK_FAILURE;
+        }
+        
+        conn->bytes_sent_ += written;
+        
+        observability::Logger::instance().info("HTTP/2 frames sent", {
+            {"tunnel_id", conn->tunnel_id_},
+            {"bytes", std::to_string(written)}
+        });
+        
+        return static_cast<ssize_t>(written);
+        
+    } catch (const std::exception& e) {
+        observability::Logger::instance().error("Send callback exception", {
+            {"tunnel_id", conn->tunnel_id_},
+            {"error", e.what()}
+        });
+        return NGHTTP2_ERR_CALLBACK_FAILURE;
+    }
 }
 
 int AgentConnection::on_frame_recv_callback(nghttp2_session* session,
@@ -202,11 +246,16 @@ int AgentConnection::on_frame_recv_callback(nghttp2_session* session,
             break;
             
         case NGHTTP2_HEADERS:
-            if (frame->headers.cat == NGHTTP2_HCAT_REQUEST) {
-                observability::Logger::instance().debug("Request headers received", {
+            if (frame->headers.cat == NGHTTP2_HCAT_RESPONSE) {
+                observability::Logger::instance().debug("Response headers received", {
                     {"tunnel_id", conn->tunnel_id_},
                     {"stream_id", std::to_string(frame->hd.stream_id)}
                 });
+                
+                // If END_STREAM flag is set and no body, complete the request
+                if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
+                    conn->complete_request(frame->hd.stream_id);
+                }
             }
             break;
             
@@ -216,6 +265,11 @@ int AgentConnection::on_frame_recv_callback(nghttp2_session* session,
                 {"stream_id", std::to_string(frame->hd.stream_id)},
                 {"length", std::to_string(frame->hd.length)}
             });
+            
+            // If END_STREAM flag is set, complete the request
+            if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
+                conn->complete_request(frame->hd.stream_id);
+            }
             break;
             
         case NGHTTP2_GOAWAY:
@@ -238,8 +292,22 @@ int AgentConnection::on_header_callback(nghttp2_session* session, const nghttp2_
     std::string header_name(reinterpret_cast<const char*>(name), namelen);
     std::string header_value(reinterpret_cast<const char*>(value), valuelen);
     
-    // Store headers for this stream
-    conn->stream_headers_[frame->hd.stream_id] += header_name + ": " + header_value + "\r\n";
+    // Convert HTTP/2 :status to HTTP/1.1 status line
+    if (header_name == ":status") {
+        // If this is first header, initialize with HTTP/1.1 status line
+        if (conn->stream_headers_.find(frame->hd.stream_id) == conn->stream_headers_.end()) {
+            conn->stream_headers_[frame->hd.stream_id] = "HTTP/1.1 " + header_value + " OK\r\n";
+        }
+    } else if (header_name[0] == ':') {
+        // Skip other HTTP/2 pseudo-headers (:method, :path, :scheme, :authority)
+        observability::Logger::instance().debug("Skipping HTTP/2 pseudo-header", {
+            {"tunnel_id", conn->tunnel_id_},
+            {"name", header_name}
+        });
+    } else {
+        // Store regular headers
+        conn->stream_headers_[frame->hd.stream_id] += header_name + ": " + header_value + "\r\n";
+    }
     
     observability::Logger::instance().debug("Header received", {
         {"tunnel_id", conn->tunnel_id_},
@@ -257,7 +325,7 @@ int AgentConnection::on_data_chunk_recv_callback(nghttp2_session* session, uint8
     auto* conn = static_cast<AgentConnection*>(user_data);
     
     // Store data for this stream
-    conn->stream_bodies_[stream_id].append(reinterpret_cast<const char*>(data), len);
+    conn->stream_bodies_recv_[stream_id].append(reinterpret_cast<const char*>(data), len);
     
     observability::Logger::instance().debug("Data chunk received", {
         {"tunnel_id", conn->tunnel_id_},
@@ -266,6 +334,67 @@ int AgentConnection::on_data_chunk_recv_callback(nghttp2_session* session, uint8
     });
     
     return 0;
+}
+
+void AgentConnection::complete_request(int32_t stream_id) {
+    std::lock_guard lock(requests_mutex_);
+    
+    // Find request_id for this stream
+    auto stream_it = stream_to_request_.find(stream_id);
+    if (stream_it == stream_to_request_.end()) {
+        observability::Logger::instance().warning("No request found for stream", {
+            {"tunnel_id", tunnel_id_},
+            {"stream_id", std::to_string(stream_id)}
+        });
+        return;
+    }
+    
+    std::string request_id = stream_it->second;
+    
+    // Find callback
+    auto callback_it = pending_requests_.find(request_id);
+    if (callback_it == pending_requests_.end()) {
+        observability::Logger::instance().warning("No callback found for request", {
+            {"tunnel_id", tunnel_id_},
+            {"request_id", request_id}
+        });
+        return;
+    }
+    
+    // Build HTTP response from headers and body
+    std::string response;
+    
+    // Add headers
+    if (stream_headers_.count(stream_id)) {
+        response = stream_headers_[stream_id];
+    }
+    
+    // Add blank line between headers and body
+    if (!response.empty()) {
+        response += "\r\n";
+    }
+    
+    // Add body
+    if (stream_bodies_recv_.count(stream_id)) {
+        response += stream_bodies_recv_[stream_id];
+    }
+    
+    observability::Logger::instance().info("Request completed", {
+        {"tunnel_id", tunnel_id_},
+        {"request_id", request_id},
+        {"stream_id", std::to_string(stream_id)},
+        {"response_size", std::to_string(response.size())}
+    });
+    
+    // Invoke callback
+    callback_it->second(response, false);
+    
+    // Clean up
+    pending_requests_.erase(callback_it);
+    stream_to_request_.erase(stream_it);
+    stream_headers_.erase(stream_id);
+    stream_bodies_recv_.erase(stream_id);
+    stream_bodies_.erase(request_id);
 }
 
 void AgentConnection::start_read() {
@@ -286,12 +415,17 @@ void AgentConnection::start_read() {
             
             bytes_received_ += bytes_transferred;
             
+            observability::Logger::instance().info("Received data from agent", {
+                {"tunnel_id", tunnel_id_},
+                {"bytes", std::to_string(bytes_transferred)}
+            });
+            
             // Feed data to nghttp2
             ssize_t rv = nghttp2_session_mem_recv(http2_session_, 
                                                   recv_buffer_.data(), 
                                                   bytes_transferred);
             if (rv < 0) {
-                observability::Logger::instance().error("nghttp2 error", {
+                observability::Logger::instance().error("nghttp2_session_mem_recv error", {
                     {"tunnel_id", tunnel_id_},
                     {"error", nghttp2_strerror(static_cast<int>(rv))}
                 });
@@ -299,8 +433,22 @@ void AgentConnection::start_read() {
                 return;
             }
             
-            // Send any pending responses
-            send_pending_data();
+            observability::Logger::instance().info("nghttp2_session_mem_recv succeeded", {
+                {"tunnel_id", tunnel_id_},
+                {"consumed", std::to_string(rv)}
+            });
+            
+            // CRITICAL: After receiving data, must call nghttp2_session_send()
+            // This sends response frames like SETTINGS ACK
+            int send_rv = nghttp2_session_send(http2_session_);
+            if (send_rv != 0) {
+                observability::Logger::instance().error("nghttp2_session_send after recv failed", {
+                    {"tunnel_id", tunnel_id_},
+                    {"error", nghttp2_strerror(send_rv)}
+                });
+                close();
+                return;
+            }
             
             // Continue reading
             start_read();
@@ -318,26 +466,160 @@ void AgentConnection::send_http_request(
         return;
     }
     
-    // Store callback
+    if (!http2_session_) {
+        observability::Logger::instance().error("HTTP/2 session not initialized", {
+            {"tunnel_id", tunnel_id_}
+        });
+        callback("", true);
+        return;
+    }
+    
+    // Parse HTTP request to extract method, path, headers, body
+    std::istringstream request_stream(http_request);
+    std::string request_line;
+    std::getline(request_stream, request_line);
+    
+    // Parse request line: METHOD PATH HTTP/VERSION
+    std::istringstream line_stream(request_line);
+    std::string method, path, version;
+    line_stream >> method >> path >> version;
+    
+    // Parse headers
+    std::map<std::string, std::string> headers;
+    std::string header_line;
+    while (std::getline(request_stream, header_line) && !header_line.empty() && header_line != "\r") {
+        if (!header_line.empty() && header_line.back() == '\r') {
+            header_line.pop_back();
+        }
+        
+        size_t colon = header_line.find(':');
+        if (colon != std::string::npos) {
+            std::string name = header_line.substr(0, colon);
+            std::string value = header_line.substr(colon + 1);
+            
+            // Trim whitespace
+            value.erase(0, value.find_first_not_of(" \t"));
+            value.erase(value.find_last_not_of(" \t") + 1);
+            
+            // Convert to lowercase for HTTP/2
+            std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+            headers[name] = value;
+        }
+    }
+    
+    // Read body
+    std::ostringstream body_stream;
+    body_stream << request_stream.rdbuf();
+    std::string body = body_stream.str();
+    
+    // Build header storage first (all strings) to avoid vector reallocation issues
+    std::vector<std::pair<std::string, std::string>> header_pairs;
+    header_pairs.emplace_back(":method", method);
+    header_pairs.emplace_back(":path", path);
+    header_pairs.emplace_back(":scheme", "https");
+    
+    if (headers.count("host")) {
+        header_pairs.emplace_back(":authority", headers.at("host"));
+    }
+    
+    header_pairs.emplace_back("x-tunnel-request-id", request_id);
+    
+    // Regular headers (skip host as it's now :authority)
+    for (const auto& [name, value] : headers) {
+        if (name != "host") {
+            header_pairs.emplace_back(name, value);
+        }
+    }
+    
+    // Now create nghttp2_nv array pointing to the stable strings in header_pairs
+    std::vector<nghttp2_nv> hdrs;
+    hdrs.reserve(header_pairs.size());
+    for (const auto& [name, value] : header_pairs) {
+        hdrs.push_back({
+            const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(name.data())),
+            const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(value.data())),
+            name.size(),
+            value.size(),
+            NGHTTP2_NV_FLAG_NONE
+        });
+    }
+    
+    // Submit headers with END_STREAM if no body
+    int flags = NGHTTP2_FLAG_END_HEADERS;
+    if (body.empty()) {
+        flags |= NGHTTP2_FLAG_END_STREAM;
+    }
+    
+    int32_t stream_id = nghttp2_submit_headers(http2_session_, flags, 
+                                                -1, nullptr,
+                                                hdrs.data(), hdrs.size(), 
+                                                nullptr);
+    
+    if (stream_id < 0) {
+        observability::Logger::instance().error("Failed to submit HTTP/2 headers", {
+            {"tunnel_id", tunnel_id_},
+            {"error", nghttp2_strerror(stream_id)}
+        });
+        callback("", true);
+        return;
+    }
+    
+    // Send body if present
+    if (!body.empty()) {
+        // Store body in pending requests map to keep it alive
+        stream_bodies_[request_id] = body;
+        
+        nghttp2_data_provider body_provider;
+        body_provider.source.ptr = &stream_bodies_[request_id];
+        body_provider.read_callback = [](nghttp2_session* session, int32_t stream_id,
+                                         uint8_t* buf, size_t length, uint32_t* data_flags,
+                                         nghttp2_data_source* source, void* user_data) -> ssize_t {
+            auto* body_ptr = static_cast<std::string*>(source->ptr);
+            size_t to_copy = std::min(length, body_ptr->size());
+            std::memcpy(buf, body_ptr->data(), to_copy);
+            *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+            return to_copy;
+        };
+        
+        int rv = nghttp2_submit_data(http2_session_, NGHTTP2_FLAG_END_STREAM,
+                                     stream_id, &body_provider);
+        if (rv != 0) {
+            observability::Logger::instance().error("Failed to submit HTTP/2 body", {
+                {"tunnel_id", tunnel_id_},
+                {"stream_id", std::to_string(stream_id)},
+                {"error", nghttp2_strerror(rv)}
+            });
+        }
+    } else {
+        // No body, end stream with another HEADERS frame
+        std::vector<nghttp2_nv> empty_hdrs;
+        nghttp2_submit_headers(http2_session_, NGHTTP2_FLAG_END_STREAM,
+                              stream_id, nullptr, empty_hdrs.data(), 0, nullptr);
+    }
+    
+    // Store callback mapped to stream_id
     {
         std::lock_guard lock(requests_mutex_);
         pending_requests_[request_id] = std::move(callback);
+        stream_to_request_[stream_id] = request_id;
     }
     
-    // TODO: Send HTTP/2 stream with request
-    // This will be implemented with nghttp2 integration
+    // Send the request
+    send_pending_data();
     
-    observability::Logger::instance().debug("HTTP request queued", {
+    observability::Logger::instance().info("HTTP/2 request sent to agent", {
         {"tunnel_id", tunnel_id_},
         {"request_id", request_id},
-        {"timeout_seconds", std::to_string(timeout.count())}
+        {"stream_id", std::to_string(stream_id)},
+        {"method", method},
+        {"path", path}
     });
     
     // Set timeout
     auto self = shared_from_this();
     auto timer = std::make_shared<boost::asio::steady_timer>(io_context_);
     timer->expires_after(timeout);
-    timer->async_wait([this, self, request_id, timer](const boost::system::error_code& ec) {
+    timer->async_wait([this, self, request_id, stream_id, timer](const boost::system::error_code& ec) {
         if (ec) {
             return; // Cancelled
         }
@@ -348,6 +630,8 @@ void AgentConnection::send_http_request(
         if (it != pending_requests_.end()) {
             it->second("", true);
             pending_requests_.erase(it);
+            stream_to_request_.erase(stream_id);
+            stream_bodies_.erase(request_id);
             
             observability::Logger::instance().warning("Request timeout", {
                 {"tunnel_id", tunnel_id_},

@@ -24,7 +24,7 @@ TLSManager::TLSManager(const std::string& key_vault_uri, boost::asio::io_context
     configure_tls_options(*agent_context_);
     
     // For development with mock Key Vault, try to load local certificates
-    if (key_vault_uri.find("mock-keyvault") != std::string::npos) {
+    if (key_vault_uri.find("mock") != std::string::npos) {
         load_local_development_cert();
     }
     
@@ -239,13 +239,9 @@ void TLSManager::configure_tls_options(ssl_context& ctx) {
     // Set minimum TLS version explicitly (TLS 1.2)
     SSL_CTX_set_min_proto_version(ctx.native_handle(), TLS1_2_VERSION);
     
-    // Set cipher suite (strong ciphers only - ECDHE for forward secrecy, AES-GCM for AEAD)
-    SSL_CTX_set_cipher_list(ctx.native_handle(), 
-        "ECDHE-ECDSA-AES256-GCM-SHA384:"
-        "ECDHE-RSA-AES256-GCM-SHA384:"
-        "ECDHE-ECDSA-AES128-GCM-SHA256:"
-        "ECDHE-RSA-AES128-GCM-SHA256"
-    );
+    // Set cipher suite - use HIGH which includes all strong ciphers available
+    // This ensures compatibility across different OpenSSL versions and platforms
+    SSL_CTX_set_cipher_list(ctx.native_handle(), "HIGH:!aNULL:!eNULL:!EXPORT:!DES:!MD5:!PSK:!RC4");
     
     observability::Logger::instance().debug("TLS options configured", {
         {"min_version", "TLS 1.2"},

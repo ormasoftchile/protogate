@@ -74,8 +74,9 @@ int main(int argc, char* argv[]) {
         
         LOG_INFO("Token validator initialized");
         
-        // For local testing with mock Key Vault, add a test token
-        if (config.key_vault_uri.find("mock-keyvault") != std::string::npos) {
+        // For local testing with mock Key Vault, add a test token and tunnel
+        if (config.key_vault_uri.find("mock") != std::string::npos) {
+            // Add test token
             models::AuthToken test_token;
             test_token.token_hash = security::TokenValidator::compute_token_hash("tnl_local_test_123");
             test_token.created_at = std::chrono::system_clock::now();
@@ -85,6 +86,24 @@ int main(int argc, char* argv[]) {
             
             LOG_INFO("Test token added for local testing", {
                 {"tunnel_id", "test-api"}
+            });
+            
+            // Add test tunnel
+            models::Tunnel test_tunnel;
+            test_tunnel.tunnel_id = "test-api";
+            test_tunnel.protocol = models::TunnelProtocol::HTTP;
+            test_tunnel.target_host = "localhost";
+            test_tunnel.target_port = 3000;
+            test_tunnel.status = models::TunnelStatus::ACTIVE;
+            test_tunnel.rate_limit_rpm = 0;  // Unlimited
+            test_tunnel.created_at = std::chrono::system_clock::now();
+            test_tunnel.updated_at = std::chrono::system_clock::now();
+            
+            tunnel_cache->put("test-api", test_tunnel, std::chrono::hours(24));
+            
+            LOG_INFO("Test tunnel added for local testing", {
+                {"tunnel_id", "test-api"},
+                {"target", "localhost:3000"}
             });
         }
         

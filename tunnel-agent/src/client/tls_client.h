@@ -10,7 +10,7 @@ namespace agent {
 
 class TLSClient {
 public:
-    TLSClient(const std::string& host, unsigned short port, bool verify_tls);
+    TLSClient(boost::asio::io_context& io_context, const std::string& host, unsigned short port, bool verify_tls);
     ~TLSClient();
     
     void connect();
@@ -29,7 +29,7 @@ private:
     bool verify_tls_;
     bool connected_;
     
-    std::unique_ptr<boost::asio::io_context> io_context_;
+    boost::asio::io_context& io_context_;
     std::unique_ptr<boost::asio::ssl::context> ssl_context_;
     std::unique_ptr<boost::asio::ssl::stream<boost::asio::ip::tcp::socket>> socket_;
 };

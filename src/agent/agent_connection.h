@@ -185,6 +185,11 @@ private:
                                            int32_t stream_id, const uint8_t* data,
                                            size_t len, void* user_data);
 
+    /**
+     * @brief Complete a request by invoking callback with response
+     */
+    void complete_request(int32_t stream_id);
+
     boost::asio::io_context& io_context_;
     ssl_socket socket_;
     std::string tunnel_id_;
@@ -193,7 +198,6 @@ private:
     
     // HTTP/2 session
     nghttp2_session* http2_session_;
-    std::vector<uint8_t> send_buffer_;
     std::array<uint8_t, 16384> recv_buffer_;
     
     // Heartbeat timer
@@ -207,11 +211,13 @@ private:
     
     // Request tracking
     std::unordered_map<std::string, request_callback> pending_requests_;
+    std::unordered_map<int32_t, std::string> stream_to_request_;  // stream_id -> request_id
+    std::unordered_map<std::string, std::string> stream_bodies_;  // request_id -> body data
     std::mutex requests_mutex_;
     
     // Stream data buffers
     std::unordered_map<int32_t, std::string> stream_headers_;
-    std::unordered_map<int32_t, std::string> stream_bodies_;
+    std::unordered_map<int32_t, std::string> stream_bodies_recv_;
 };
 
 }  // namespace agent

@@ -27,8 +27,13 @@ void run_agent(const protogate::agent::AgentConfig& config) {
     
     while (running && reconnect.should_reconnect()) {
         try {
+            // Create io_context for async operations
+            boost::asio::io_context io_context;
+            // Keep io_context alive
+            boost::asio::executor_work_guard<boost::asio::io_context::executor_type> work_guard = boost::asio::make_work_guard(io_context);
+            
             // Create TLS client
-            TLSClient tls_client(config.server.host, config.server.port, config.server.verify_tls);
+            TLSClient tls_client(io_context, config.server.host, config.server.port, config.server.verify_tls);
             
             Logger::info("Connecting to server", {
                 {"host", config.server.host},
@@ -38,7 +43,7 @@ void run_agent(const protogate::agent::AgentConfig& config) {
             tls_client.connect();
             
             // Create HTTP/2 session
-            HTTP2Session http2_session(tls_client, config.tunnel.id, config.tunnel.token);
+            HTTP2Session http2_session(io_context, tls_client, config.tunnel.id, config.tunnel.token);
             
             // Create request forwarder
             RequestForwarder forwarder(config.local.url, config.local.timeout_seconds * 1000);
@@ -47,6 +52,11 @@ void run_agent(const protogate::agent::AgentConfig& config) {
             HeartbeatManager heartbeat(http2_session, 
                                       config.health.heartbeat_interval_seconds * 1000,
                                       config.health.heartbeat_timeout_seconds * 1000);
+            
+            // Wire PING ACK callback to heartbeat manager
+            http2_session.set_ping_ack_callback([&heartbeat]() {
+                heartbeat.record_ping_ack();
+            });
             
             // Start HTTP/2 session with request callback
             http2_session.start([&](const HTTP2Request& request) {
@@ -72,10 +82,23 @@ void run_agent(const protogate::agent::AgentConfig& config) {
             // Reset reconnection delay on successful connection
             reconnect.reset();
             
-            // Main event loop
-            while (running && http2_session.is_active()) {
-                // Process HTTP/2 events
-                http2_session.process_events();
+            // Log that event loop is starting
+            Logger::info("Starting event loop");
+            
+            // Log initial state
+            Logger::info("Event loop initial state", {
+                {"running", std::to_string(running)},
+                {"is_active", std::to_string(http2_session.is_active())}
+            });
+            
+            // Create a timer for periodic heartbeat checks
+            boost::asio::steady_timer heartbeat_timer(io_context);
+            std::function<void(const boost::system::error_code&)> heartbeat_check;
+            
+            heartbeat_check = [&](const boost::system::error_code& ec) {
+                if (ec || !running || !http2_session.is_active()) {
+                    return;
+                }
                 
                 // Send heartbeat if needed
                 if (heartbeat.should_send_ping()) {
@@ -85,11 +108,52 @@ void run_agent(const protogate::agent::AgentConfig& config) {
                 // Check heartbeat timeout
                 if (heartbeat.is_timed_out()) {
                     Logger::error("Heartbeat timeout, disconnecting");
-                    break;
+                    running = false;  // Signal main loop to stop, don't force io_context.stop()
+                    http2_session.stop();
+                    return;
                 }
                 
-                // Small delay to avoid busy loop
+                // Process any pending HTTP/2 events
+                http2_session.process_events();
+                
+                // Schedule next check
+                heartbeat_timer.expires_after(std::chrono::milliseconds(100));
+                heartbeat_timer.async_wait(heartbeat_check);
+            };
+            
+            // Start heartbeat timer
+            heartbeat_timer.expires_after(std::chrono::milliseconds(100));
+            heartbeat_timer.async_wait(heartbeat_check);
+            
+            // Main event loop - run io_context
+            Logger::info("Starting async I/O event loop", {
+                {"io_context_addr", std::to_string(reinterpret_cast<uintptr_t>(&io_context))}
+            });
+            
+            // Run io_context in a separate thread so we can check running flag
+            std::thread io_thread([&]() {
+                Logger::info("io_context.run() starting");
+                io_context.run();
+                Logger::info("io_context.run() exited");
+            });
+            
+            // Monitor running flag
+            while (running && http2_session.is_active()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            
+            // Stop work guard to allow io_context to finish
+            work_guard.reset();
+            
+            Logger::info("Event loop exited", {
+                {"running", std::to_string(running)},
+                {"is_active", std::to_string(http2_session.is_active())}
+            });
+            
+            // Stop io_context and wait for thread
+            io_context.stop();
+            if (io_thread.joinable()) {
+                io_thread.join();
             }
             
             Logger::info("Session ended");

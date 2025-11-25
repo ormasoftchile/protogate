@@ -87,6 +87,28 @@ AgentConfig AgentConfig::from_cli_args(int argc, char* argv[]) {
             config.tunnel.id = argv[++i];
         } else if (arg == "--local-url" && i + 1 < argc) {
             config.local.url = argv[++i];
+        } else if (arg == "--no-verify-tls") {
+            config.server.verify_tls = false;
+        } else if (arg == "--verify-tls") {
+            config.server.verify_tls = true;
+        } else if (arg == "--server-host" && i + 1 < argc) {
+            config.server.host = argv[++i];
+        } else if (arg == "--server-port" && i + 1 < argc) {
+            config.server.port = std::stoi(argv[++i]);
+        } else if (arg == "--target-host" && i + 1 < argc) {
+            // Parse target from local.url
+            std::string target = argv[++i];
+            config.local.url = "http://" + target + ":3000";
+        } else if (arg == "--target-port" && i + 1 < argc) {
+            // Update port in local.url
+            std::string port = argv[++i];
+            size_t colon_pos = config.local.url.rfind(':');
+            if (colon_pos != std::string::npos) {
+                config.local.url = config.local.url.substr(0, colon_pos + 1) + port;
+            }
+        } else if (arg == "--log-file" && i + 1 < argc) {
+            // Store log file path (will be used by Logger)
+            i++; // Skip the value, Logger handles this
         } else if (arg == "--help" || arg == "-h") {
             throw std::runtime_error("HELP_REQUESTED");
         }

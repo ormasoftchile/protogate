@@ -11,8 +11,10 @@
 namespace protogate {
 namespace agent {
 
-HTTP2Session::HTTP2Session(TLSClient& tls_client, const std::string& tunnel_id, const std::string& token)
-    : tls_client_(tls_client), tunnel_id_(tunnel_id), token_(token), session_(nullptr), active_(false) {
+HTTP2Session::HTTP2Session(boost::asio::io_context& io_context, TLSClient& tls_client, 
+                           const std::string& tunnel_id, const std::string& token)
+    : io_context_(io_context), tls_client_(tls_client), tunnel_id_(tunnel_id), 
+      token_(token), session_(nullptr), active_(false) {
 }
 
 HTTP2Session::~HTTP2Session() {
@@ -53,17 +55,35 @@ void HTTP2Session::start(RequestCallback on_request) {
         
         Logger::info("Sent HTTP/1.1 authentication");
         
-        // Read authentication response
+        // Read authentication response with timeout
+        // Socket is in non-blocking mode, so we need to wait for data
         char response_buffer[1024];
-        size_t bytes_read = tls_client_.socket().read_some(boost::asio::buffer(response_buffer), ec);
+        size_t bytes_read = 0;
         
-        if (ec && ec != boost::asio::error::eof) {
-            throw std::runtime_error("Failed to read auth response: " + ec.message());
+        // Try to read response with retries (max 5 seconds)
+        for (int i = 0; i < 50; ++i) {
+            bytes_read = tls_client_.socket().read_some(boost::asio::buffer(response_buffer), ec);
+            
+            if (!ec) {
+                break; // Success
+            }
+            
+            if (ec != boost::asio::error::would_block) {
+                throw std::runtime_error("Failed to read auth response: " + ec.message());
+            }
+            
+            // Wait 100ms before retrying
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        if (ec == boost::asio::error::would_block) {
+            throw std::runtime_error("Timeout waiting for auth response");
         }
         
         std::string response(response_buffer, bytes_read);
         Logger::info("Received auth response", {
-            {"response", response.substr(0, std::min<size_t>(100, response.size()))}
+            {"response", response.substr(0, std::min<size_t>(100, response.size()))},
+            {"bytes_read", std::to_string(bytes_read)}
         });
         
         // Check if authentication succeeded
@@ -87,10 +107,11 @@ void HTTP2Session::start(RequestCallback on_request) {
     nghttp2_session_callbacks_set_on_header_callback(callbacks, on_header_callback);
     nghttp2_session_callbacks_set_on_data_chunk_recv_callback(callbacks, on_data_chunk_recv_callback);
     
-    nghttp2_session_client_new(&session_, callbacks, this);
+    // After CONNECT succeeds, agent acts as HTTP/2 server to receive requests
+    nghttp2_session_server_new(&session_, callbacks, this);
     nghttp2_session_callbacks_del(callbacks);
     
-    // Send HTTP/2 connection preface
+    // Send initial SETTINGS frame
     nghttp2_settings_entry iv[1] = {
         {NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS, 100}
     };
@@ -100,7 +121,10 @@ void HTTP2Session::start(RequestCallback on_request) {
     send_data();
     
     active_ = true;
+    Logger::info("HTTP/2 session active flag set to TRUE");
     
+    // Start async read loop
+    start_async_read();
     Logger::info("HTTP/2 session started", {
         {"tunnel_id", tunnel_id_}
     });
@@ -117,6 +141,7 @@ void HTTP2Session::stop() {
     }
     
     active_ = false;
+    Logger::info("HTTP/2 session active flag set to FALSE in stop()");
     
     Logger::info("HTTP/2 session stopped");
 }
@@ -124,6 +149,11 @@ void HTTP2Session::stop() {
 bool HTTP2Session::is_active() const {
     return active_;
 }
+
+void HTTP2Session::set_ping_ack_callback(PingAckCallback callback) {
+    on_ping_ack_ = std::move(callback);
+}
+
 
 void HTTP2Session::send_connect_request() {
     // Build CONNECT request headers
@@ -175,26 +205,34 @@ void HTTP2Session::send_connect_request() {
 void HTTP2Session::send_response(int32_t stream_id, int status_code, 
                                  const std::map<std::string, std::string>& headers,
                                  const std::vector<uint8_t>& body) {
-    // Build response headers
-    std::vector<nghttp2_nv> hdrs;
+    // Store body to keep it alive
+    response_bodies_[stream_id] = body;
     
-    std::string status_str = std::to_string(status_code);
-    const char* status_name = ":status";
-    hdrs.push_back({(uint8_t*)status_name, (uint8_t*)status_str.c_str(), 
-                   strlen(status_name), status_str.size(), NGHTTP2_NV_FLAG_NONE});
+    // Build header storage to prevent dangling pointers
+    std::vector<std::pair<std::string, std::string>> header_pairs;
+    header_pairs.emplace_back(":status", std::to_string(status_code));
     
     for (const auto& [key, value] : headers) {
-        hdrs.push_back({(uint8_t*)key.c_str(), (uint8_t*)value.c_str(), 
-                       key.size(), value.size(), NGHTTP2_NV_FLAG_NONE});
+        header_pairs.emplace_back(key, value);
     }
     
-    // Create data provider for response body
+    // Build nghttp2_nv array from stable header_pairs
+    std::vector<nghttp2_nv> hdrs;
+    for (const auto& [name, value] : header_pairs) {
+        hdrs.push_back({
+            (uint8_t*)name.data(), (uint8_t*)value.data(),
+            name.size(), value.size(),
+            NGHTTP2_NV_FLAG_NONE
+        });
+    }
+    
+    // Create data provider for response body pointing to stored copy
     nghttp2_data_provider data_prd;
-    data_prd.source.ptr = (void*)&body;
+    data_prd.source.ptr = (void*)&response_bodies_[stream_id];
     data_prd.read_callback = [](nghttp2_session* session, int32_t stream_id,
                                 uint8_t* buf, size_t length, uint32_t* data_flags,
                                 nghttp2_data_source* source, void* user_data) -> ssize_t {
-        auto* body_ptr = (const std::vector<uint8_t>*)source->ptr;
+        auto* body_ptr = (std::vector<uint8_t>*)source->ptr;
         size_t to_copy = std::min(length, body_ptr->size());
         std::memcpy(buf, body_ptr->data(), to_copy);
         *data_flags |= NGHTTP2_DATA_FLAG_EOF;
@@ -229,7 +267,6 @@ void HTTP2Session::send_ping() {
 }
 
 void HTTP2Session::process_events() {
-    receive_data();
     send_data();
 }
 
@@ -239,44 +276,84 @@ void HTTP2Session::send_data() {
         Logger::error("nghttp2_session_send failed", {
             {"error", nghttp2_strerror(rv)}
         });
+        active_ = false;
     }
 }
 
-void HTTP2Session::receive_data() {
-    try {
-        uint8_t buffer[8192];
-        
-        boost::system::error_code ec;
-        size_t len = tls_client_.socket().read_some(boost::asio::buffer(buffer), ec);
-        
-        if (ec == boost::asio::error::would_block || ec == boost::asio::error::try_again) {
-            return;
+void HTTP2Session::start_async_read() {
+    if (!active_) {
+        Logger::info("start_async_read called but session not active");
+        return;
+    }
+    
+    Logger::info("Posting async_read_some to io_context", {
+        {"io_context_addr", std::to_string(reinterpret_cast<uintptr_t>(&io_context_))},
+        {"socket_is_open", tls_client_.socket().lowest_layer().is_open() ? "YES" : "NO"},
+        {"active_", active_ ? "YES" : "NO"}
+    });
+    
+    // Start async read operation
+    tls_client_.socket().async_read_some(
+        boost::asio::buffer(read_buffer_),
+        [this](const boost::system::error_code& ec, size_t bytes_transferred) {
+            Logger::info("async_read_some completion handler FIRED", {
+                {"error", ec.message()},
+                {"bytes", std::to_string(bytes_transferred)},
+                {"active_", active_ ? "YES" : "NO"}
+            });
+            handle_read(ec, bytes_transferred);
         }
-        
-        if (ec) {
+    );
+    
+    Logger::info("async_read_some posted successfully");
+}
+
+void HTTP2Session::handle_read(const boost::system::error_code& ec, size_t bytes_transferred) {
+    if (ec) {
+        if (ec != boost::asio::error::eof) {
             Logger::error("Socket read error", {
                 {"error", ec.message()}
+            });
+        }
+        active_ = false;
+        return;
+    }
+    
+    if (bytes_transferred > 0) {
+        Logger::info("Received HTTP/2 data from server", {
+            {"bytes", std::to_string(bytes_transferred)}
+        });
+        
+        // Feed received data to nghttp2
+        ssize_t readlen = nghttp2_session_mem_recv(session_, read_buffer_.data(), bytes_transferred);
+        if (readlen < 0) {
+            Logger::error("nghttp2_session_mem_recv failed", {
+                {"error", nghttp2_strerror(static_cast<int>(readlen))}
             });
             active_ = false;
             return;
         }
         
-        if (len > 0) {
-            ssize_t readlen = nghttp2_session_mem_recv(session_, buffer, len);
-            if (readlen < 0) {
-                Logger::error("nghttp2_session_mem_recv failed", {
-                    {"error", nghttp2_strerror(readlen)}
-                });
-                active_ = false;
-            }
+        Logger::info("nghttp2_session_mem_recv succeeded", {
+            {"consumed", std::to_string(readlen)}
+        });
+        
+        // CRITICAL: After receiving data, must call nghttp2_session_send()
+        // This sends response frames like SETTINGS ACK
+        int rv = nghttp2_session_send(session_);
+        if (rv != 0) {
+            Logger::error("nghttp2_session_send after recv failed", {
+                {"error", nghttp2_strerror(rv)}
+            });
+            active_ = false;
+            return;
         }
         
-    } catch (const std::exception& e) {
-        Logger::error("Exception in receive_data", {
-            {"error", e.what()}
-        });
-        active_ = false;
+        Logger::info("nghttp2_session_send after recv succeeded");
     }
+    
+    // Continue reading
+    start_async_read();
 }
 
 ssize_t HTTP2Session::send_callback(nghttp2_session* session, const uint8_t* data,
@@ -285,16 +362,26 @@ ssize_t HTTP2Session::send_callback(nghttp2_session* session, const uint8_t* dat
     
     try {
         boost::system::error_code ec;
-        size_t written = boost::asio::write(self->tls_client_.socket(), 
-                                           boost::asio::buffer(data, length), ec);
+        size_t written = self->tls_client_.socket().write_some(
+            boost::asio::buffer(data, length), ec);
+        
+        if (ec == boost::asio::error::would_block || ec == boost::asio::error::try_again) {
+            return NGHTTP2_ERR_WOULDBLOCK;
+        }
         
         if (ec) {
+            Logger::error("Send callback error", {
+                {"error", ec.message()}
+            });
             return NGHTTP2_ERR_CALLBACK_FAILURE;
         }
         
         return written;
         
-    } catch (...) {
+    } catch (const std::exception& e) {
+        Logger::error("Send callback exception", {
+            {"error", e.what()}
+        });
         return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 }
@@ -303,19 +390,40 @@ int HTTP2Session::on_frame_recv_callback(nghttp2_session* session,
                                         const nghttp2_frame* frame, void* user_data) {
     auto* self = static_cast<HTTP2Session*>(user_data);
     
+    Logger::info("Frame received", {
+        {"stream_id", std::to_string(frame->hd.stream_id)},
+        {"type", std::to_string(frame->hd.type)},
+        {"flags", std::to_string(frame->hd.flags)}
+    });
+    
     switch (frame->hd.type) {
     case NGHTTP2_HEADERS:
+        Logger::info("Processing HEADERS frame", {
+            {"stream_id", std::to_string(frame->hd.stream_id)},
+            {"has_end_headers", std::to_string((frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) != 0)},
+            {"has_end_stream", std::to_string((frame->hd.flags & NGHTTP2_FLAG_END_STREAM) != 0)}
+        });
         if (frame->hd.flags & NGHTTP2_FLAG_END_HEADERS) {
-            // Check if this is the CONNECT response
-            if (frame->hd.stream_id == 1) {
-                Logger::info("Received CONNECT response");
-            } else {
-                // This is a new request from server
-                auto it = self->pending_requests_.find(frame->hd.stream_id);
-                if (it != self->pending_requests_.end()) {
-                    Logger::debug("Request headers complete", {
+            // This is a new request from server
+            auto it = self->pending_requests_.find(frame->hd.stream_id);
+            Logger::info("Looking up pending request", {
+                {"stream_id", std::to_string(frame->hd.stream_id)},
+                {"found", std::to_string(it != self->pending_requests_.end())}
+            });
+            if (it != self->pending_requests_.end()) {
+                Logger::debug("Request headers complete", {
+                    {"stream_id", std::to_string(frame->hd.stream_id)}
+                });
+                
+                // If END_STREAM is also set (no body), complete the request now
+                if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
+                    Logger::debug("Request complete (no body)", {
                         {"stream_id", std::to_string(frame->hd.stream_id)}
                     });
+                    if (self->on_request_) {
+                        self->on_request_(it->second);
+                    }
+                    self->pending_requests_.erase(it);
                 }
             }
         }
@@ -335,7 +443,14 @@ int HTTP2Session::on_frame_recv_callback(nghttp2_session* session,
         break;
         
     case NGHTTP2_PING:
-        Logger::debug("Received PING ACK");
+        if (frame->hd.flags & NGHTTP2_FLAG_ACK) {
+            Logger::info("Received PING ACK from server");
+            if (self->on_ping_ack_) {
+                self->on_ping_ack_();
+            }
+        } else {
+            Logger::info("Received PING request from server - nghttp2 will auto-respond");
+        }
         break;
     }
     
@@ -349,17 +464,18 @@ int HTTP2Session::on_header_callback(nghttp2_session* session,
                                     uint8_t flags, void* user_data) {
     auto* self = static_cast<HTTP2Session*>(user_data);
     
-    if (frame->hd.stream_id == 1) {
-        // CONNECT response headers
-        return 0;
-    }
-    
     // Store request headers
     auto& req = self->pending_requests_[frame->hd.stream_id];
     req.stream_id = frame->hd.stream_id;
     
     std::string name_str((char*)name, namelen);
     std::string value_str((char*)value, valuelen);
+    
+    Logger::info("Header received", {
+        {"stream_id", std::to_string(frame->hd.stream_id)},
+        {"name", name_str},
+        {"value", value_str}
+    });
     
     if (name_str == ":method") {
         req.method = value_str;
