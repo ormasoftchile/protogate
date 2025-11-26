@@ -8,6 +8,7 @@
 #include <nghttp2/nghttp2.h>
 #include <boost/asio.hpp>
 #include "tls_client.h"
+#include "../forwarder/tcp_forwarder.h"
 
 namespace protogate {
 namespace agent {
@@ -25,6 +26,15 @@ struct HTTP2Request {
 
 using RequestCallback = std::function<void(const HTTP2Request&)>;
 using PingAckCallback = std::function<void()>;
+
+// TCP frame types (must match server)
+enum class TCPFrameType : uint8_t {
+    TCP_OPEN = 0x10,
+    TCP_DATA = 0x11,
+    TCP_CLOSE = 0x12,
+    TCP_ERROR = 0x13,
+    TCP_ACK = 0x14
+};
 
 class HTTP2Session {
 public:
@@ -45,6 +55,10 @@ public:
     void send_ping();
     void process_events();
     
+    // TCP tunneling support
+    void set_tcp_forwarder(std::shared_ptr<TCPForwarder> forwarder);
+    void send_tcp_frame(const std::vector<uint8_t>& frame_data);
+    
 private:
     boost::asio::io_context& io_context_;
     TLSClient& tls_client_;
@@ -59,6 +73,10 @@ private:
     // Async read buffer
     std::array<uint8_t, 8192> read_buffer_;
     
+    // TCP frame buffering
+    std::vector<uint8_t> tcp_frame_buffer_;
+    std::shared_ptr<TCPForwarder> tcp_forwarder_;
+    
     std::map<int32_t, HTTP2Request> pending_requests_;
     std::map<int32_t, std::vector<uint8_t>> response_bodies_;  // Keep response bodies alive
     
@@ -72,6 +90,11 @@ private:
     void send_data();
     void start_async_read();
     void handle_read(const boost::system::error_code& ec, size_t bytes_transferred);
+    
+    // TCP frame processing
+    bool is_tcp_frame(const uint8_t* data, size_t length);
+    size_t process_tcp_frames(const uint8_t* data, size_t length);
+    void handle_tcp_frame(const uint8_t* frame_data, size_t frame_length);
     
     static ssize_t send_callback(nghttp2_session* session, const uint8_t* data,
                                 size_t length, int flags, void* user_data);

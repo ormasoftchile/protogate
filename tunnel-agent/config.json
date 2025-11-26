@@ -5,8 +5,8 @@
     "verify_tls": false
   },
   "tunnel": {
-    "id": "api",
-    "token": "tnl_test_token_123"
+    "id": "test-api",
+    "token": "tnl_local_test_123"
   },
   "local": {
     "url": "http://localhost:3000",

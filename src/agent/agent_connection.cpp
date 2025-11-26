@@ -420,24 +420,46 @@ void AgentConnection::start_read() {
                 {"bytes", std::to_string(bytes_transferred)}
             });
             
-            // Feed data to nghttp2
-            ssize_t rv = nghttp2_session_mem_recv(http2_session_, 
-                                                  recv_buffer_.data(), 
-                                                  bytes_transferred);
-            if (rv < 0) {
-                observability::Logger::instance().error("nghttp2_session_mem_recv error", {
+            // Check if data contains TCP frames (type 0x10-0x14)
+            // TCP frames should be processed separately, not fed to nghttp2
+            size_t tcp_consumed = 0;
+            if (bytes_transferred > 0 && recv_buffer_[0] >= 0x10 && recv_buffer_[0] <= 0x14) {
+                observability::Logger::instance().info("Detected TCP frame from agent", {
                     {"tunnel_id", tunnel_id_},
-                    {"error", nghttp2_strerror(static_cast<int>(rv))}
+                    {"frame_type", std::to_string(static_cast<int>(recv_buffer_[0]))}
                 });
-                close();
-                return;
+                
+                // Forward to TCP frame handler if set
+                if (tcp_frame_handler_) {
+                    tcp_frame_handler_(recv_buffer_.data(), bytes_transferred);
+                } else {
+                    observability::Logger::instance().warning("TCP frame dropped: no handler", {
+                        {"tunnel_id", tunnel_id_}
+                    });
+                }
+                
+                tcp_consumed = bytes_transferred;  // All bytes were TCP frames
             }
             
-            observability::Logger::instance().info("nghttp2_session_mem_recv succeeded", {
-                {"tunnel_id", tunnel_id_},
-                {"consumed", std::to_string(rv)}
-            });
-            
+            // Feed remaining data to nghttp2
+            if (tcp_consumed < bytes_transferred) {
+                ssize_t rv = nghttp2_session_mem_recv(http2_session_, 
+                                                      recv_buffer_.data() + tcp_consumed, 
+                                                      bytes_transferred - tcp_consumed);
+                if (rv < 0) {
+                    observability::Logger::instance().error("nghttp2_session_mem_recv error", {
+                        {"tunnel_id", tunnel_id_},
+                        {"error", nghttp2_strerror(static_cast<int>(rv))}
+                    });
+                    close();
+                    return;
+                }
+                
+                observability::Logger::instance().info("nghttp2_session_mem_recv succeeded", {
+                    {"tunnel_id", tunnel_id_},
+                    {"consumed", std::to_string(rv)}
+                });
+            }
             // CRITICAL: After receiving data, must call nghttp2_session_send()
             // This sends response frames like SETTINGS ACK
             int send_rv = nghttp2_session_send(http2_session_);
@@ -644,24 +666,92 @@ void AgentConnection::send_http_request(
 void AgentConnection::send_tcp_data(
     const std::string& connection_id,
     const std::string& data,
-    request_callback callback) {
+    const request_callback& callback) {
+    
+    observability::Logger::instance().info("send_tcp_data called with callback", {
+        {"connection_id", connection_id},
+        {"callback_valid", callback ? "YES" : "NO"},
+        {"callback_ptr", std::to_string(reinterpret_cast<uintptr_t>(&callback))},
+        {"callback_target_type", callback.target_type().name()}
+    });
     
     if (state_ != State::CONNECTED) {
+        observability::Logger::instance().warning("Cannot send TCP data - not connected", {
+            {"tunnel_id", tunnel_id_},
+            {"connection_id", connection_id},
+            {"state", std::to_string(static_cast<int>(state_))}
+        });
         callback("", true);
         return;
     }
     
-    // TODO: Send binary TCP_DATA frame
-    // Frame format: [type=0x10][conn_id=16B][seq=4B][len=4B][data]
-    
-    observability::Logger::instance().debug("TCP data queued", {
+    observability::Logger::instance().info("Attempting to send TCP frame via sync write", {
         {"tunnel_id", tunnel_id_},
         {"connection_id", connection_id},
-        {"bytes", std::to_string(data.size())}
+        {"frame_size", std::to_string(data.size())},
+        {"socket_open", socket_.lowest_layer().is_open() ? "YES" : "NO"}
     });
     
-    update_stats(data.size(), 0);
-    callback("", false);
+    // Send binary TCP frame over TLS socket (out-of-band from HTTP/2)
+    // Use synchronous write_some like nghttp2's send_callback does - they share the same socket
+    try {
+        boost::system::error_code ec;
+        size_t bytes_transferred = socket_.write_some(boost::asio::buffer(data), ec);
+        
+        if (ec) {
+            observability::Logger::instance().error("Failed to send TCP data", {
+                {"tunnel_id", tunnel_id_},
+                {"connection_id", connection_id},
+                {"error", ec.message()}
+            });
+            callback("", true);
+            return;
+        }
+        
+        observability::Logger::instance().info("TCP frame sent successfully", {
+            {"tunnel_id", tunnel_id_},
+            {"connection_id", connection_id},
+            {"bytes", std::to_string(bytes_transferred)}
+        });
+        
+        observability::Logger::instance().info("About to invoke callback", {
+            {"connection_id", connection_id},
+            {"error", "false"}
+        });
+        
+        update_stats(bytes_transferred, 0);
+        
+        try {
+            observability::Logger::instance().info("Invoking callback NOW", {
+                {"connection_id", connection_id}
+            });
+            callback("", false);
+            observability::Logger::instance().info("Callback returned normally", {
+                {"connection_id", connection_id}
+            });
+        } catch (const std::exception& ex) {
+            observability::Logger::instance().error("Exception during callback invocation", {
+                {"connection_id", connection_id},
+                {"error", ex.what()}
+            });
+        } catch (...) {
+            observability::Logger::instance().error("Unknown exception during callback invocation", {
+                {"connection_id", connection_id}
+            });
+        }
+        
+        observability::Logger::instance().info("Callback invoked successfully", {
+            {"connection_id", connection_id}
+        });
+        
+    } catch (const std::exception& e) {
+        observability::Logger::instance().error("Exception sending TCP data", {
+            {"tunnel_id", tunnel_id_},
+            {"connection_id", connection_id},
+            {"error", e.what()}
+        });
+        callback("", true);
+    }
 }
 
 void AgentConnection::send_tcp_close(const std::string& connection_id) {
@@ -669,12 +759,48 @@ void AgentConnection::send_tcp_close(const std::string& connection_id) {
         return;
     }
     
-    // TODO: Send binary TCP_CLOSE frame
+    // Create and send TCP_CLOSE frame
+    // Note: This is a simplified version - actual implementation needs tcp_protocol.h import
+    // For now, send a minimal close frame: [type=0x12][conn_id=16B][reason=0x0000]
+    std::vector<uint8_t> frame;
+    frame.push_back(0x12);  // TCP_CLOSE frame type
     
-    observability::Logger::instance().debug("TCP connection close sent", {
-        {"tunnel_id", tunnel_id_},
-        {"connection_id", connection_id}
-    });
+    // Add connection ID (16 bytes) - simplified UUID representation
+    for (size_t i = 0; i < 16 && i < connection_id.size(); ++i) {
+        frame.push_back(static_cast<uint8_t>(connection_id[i]));
+    }
+    while (frame.size() < 17) {
+        frame.push_back(0);
+    }
+    
+    // Add reason code (2 bytes) - NORMAL=0x0000
+    frame.push_back(0x00);
+    frame.push_back(0x00);
+    
+    std::string frame_str(frame.begin(), frame.end());
+    
+    boost::asio::async_write(
+        socket_,
+        boost::asio::buffer(frame_str),
+        [this, connection_id](const boost::system::error_code& ec, size_t) {
+            if (ec) {
+                observability::Logger::instance().error("Failed to send TCP close", {
+                    {"tunnel_id", tunnel_id_},
+                    {"connection_id", connection_id},
+                    {"error", ec.message()}
+                });
+                return;
+            }
+            
+            observability::Logger::instance().debug("TCP connection close sent", {
+                {"tunnel_id", tunnel_id_},
+                {"connection_id", connection_id}
+            });
+        });
+}
+
+void AgentConnection::set_tcp_frame_handler(tcp_frame_callback callback) {
+    tcp_frame_handler_ = callback;
 }
 
 void AgentConnection::close() {

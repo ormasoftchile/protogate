@@ -208,21 +208,36 @@ std::string TCPServer::find_tunnel_for_port(uint16_t port) const {
         return it->second;
     }
 
-    // Query tunnel cache for matching port
-    // Iterate through all tunnels to find one with matching target_port
+    // Query tunnel cache for matching server port
+    // TCP tunnels are stored with key format: "tunnel_id:tcp:server_port"
     std::string matched_tunnel_id;
     
     try {
-        tunnel_cache_->for_each([&](const std::string& tunnel_id, const models::Tunnel& tunnel) {
-            if (tunnel.protocol == models::TunnelProtocol::TCP && 
-                tunnel.target_port == port) {
-                matched_tunnel_id = tunnel_id;
+        tunnel_cache_->for_each([&](const std::string& key, const models::Tunnel& tunnel) {
+            // Check if key matches format "tunnel_id:tcp:PORT"
+            auto tcp_pos = key.find(":tcp:");
+            if (tcp_pos != std::string::npos) {
+                auto port_str = key.substr(tcp_pos + 5);  // After ":tcp:"
+                try {
+                    uint16_t key_port = static_cast<uint16_t>(std::stoi(port_str));
+                    if (key_port == port && tunnel.protocol == models::TunnelProtocol::TCP) {
+                        matched_tunnel_id = tunnel.tunnel_id;
+                    }
+                } catch (...) {
+                    // Invalid port number in key, skip
+                }
             }
         });
         
         if (!matched_tunnel_id.empty()) {
             // Cache the mapping for future lookups
             const_cast<TCPServer*>(this)->port_to_tunnel_[port] = matched_tunnel_id;
+            
+            observability::Logger::instance().info("Found tunnel for TCP port", {
+                {"port", std::to_string(port)},
+                {"tunnel_id", matched_tunnel_id}
+            });
+            
             return matched_tunnel_id;
         }
     } catch (const std::exception& e) {

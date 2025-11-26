@@ -13,7 +13,10 @@
     "files.associations": {
         "optional": "cpp",
         "vector": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "array": "cpp",
+        "span": "cpp",
+        "string_view": "cpp"
     }
 }
 

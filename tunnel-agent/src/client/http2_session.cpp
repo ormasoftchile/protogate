@@ -14,7 +14,7 @@ namespace agent {
 HTTP2Session::HTTP2Session(boost::asio::io_context& io_context, TLSClient& tls_client, 
                            const std::string& tunnel_id, const std::string& token)
     : io_context_(io_context), tls_client_(tls_client), tunnel_id_(tunnel_id), 
-      token_(token), session_(nullptr), active_(false) {
+      token_(token), session_(nullptr), active_(false), tcp_forwarder_(nullptr) {
 }
 
 HTTP2Session::~HTTP2Session() {
@@ -43,6 +43,7 @@ void HTTP2Session::start(RequestCallback on_request) {
                      << "Authorization: Bearer " << token_ << "\r\n"
                      << "X-Tunnel-ID: " << tunnel_id_ << "\r\n"
                      << "X-Agent-Version: 1.0.0\r\n"
+                     << "X-TCP-Ports: 9100\r\n"
                      << "\r\n";
         
         std::string auth_str = auth_request.str();
@@ -320,36 +321,64 @@ void HTTP2Session::handle_read(const boost::system::error_code& ec, size_t bytes
     }
     
     if (bytes_transferred > 0) {
-        Logger::info("Received HTTP/2 data from server", {
+        Logger::info("Received data from server", {
             {"bytes", std::to_string(bytes_transferred)}
         });
         
-        // Feed received data to nghttp2
-        ssize_t readlen = nghttp2_session_mem_recv(session_, read_buffer_.data(), bytes_transferred);
-        if (readlen < 0) {
-            Logger::error("nghttp2_session_mem_recv failed", {
-                {"error", nghttp2_strerror(static_cast<int>(readlen))}
+        // Check if this might be TCP frame data
+        // TCP frames start with 0x10-0x14, HTTP/2 frames typically start with 0x00-0x09
+        size_t tcp_consumed = 0;
+        if (is_tcp_frame(read_buffer_.data(), bytes_transferred)) {
+            Logger::info("Detected TCP frame in buffer", {
+                {"first_byte", std::to_string(static_cast<int>(read_buffer_.data()[0]))},
+                {"bytes", std::to_string(bytes_transferred)}
             });
-            active_ = false;
-            return;
+            
+            // Process TCP frames first
+            tcp_consumed = process_tcp_frames(read_buffer_.data(), bytes_transferred);
+            Logger::info("Processed TCP frames", {
+                {"consumed", std::to_string(tcp_consumed)},
+                {"remaining", std::to_string(bytes_transferred - tcp_consumed)}
+            });
+        } else {
+            Logger::info("Not a TCP frame, passing to HTTP/2", {
+                {"first_byte", std::to_string(static_cast<int>(read_buffer_.data()[0]))},
+                {"bytes", std::to_string(bytes_transferred)}
+            });
         }
         
-        Logger::info("nghttp2_session_mem_recv succeeded", {
-            {"consumed", std::to_string(readlen)}
-        });
-        
-        // CRITICAL: After receiving data, must call nghttp2_session_send()
-        // This sends response frames like SETTINGS ACK
-        int rv = nghttp2_session_send(session_);
-        if (rv != 0) {
-            Logger::error("nghttp2_session_send after recv failed", {
-                {"error", nghttp2_strerror(rv)}
+        // Process remaining data as HTTP/2 if any left
+        if (tcp_consumed < bytes_transferred) {
+            const uint8_t* http2_data = read_buffer_.data() + tcp_consumed;
+            size_t http2_length = bytes_transferred - tcp_consumed;
+            
+            // Feed received data to nghttp2
+            ssize_t readlen = nghttp2_session_mem_recv(session_, http2_data, http2_length);
+            if (readlen < 0) {
+                Logger::error("nghttp2_session_mem_recv failed", {
+                    {"error", nghttp2_strerror(static_cast<int>(readlen))}
+                });
+                active_ = false;
+                return;
+            }
+            
+            Logger::info("nghttp2_session_mem_recv succeeded", {
+                {"consumed", std::to_string(readlen)}
             });
-            active_ = false;
-            return;
+            
+            // CRITICAL: After receiving data, must call nghttp2_session_send()
+            // This sends response frames like SETTINGS ACK
+            int rv = nghttp2_session_send(session_);
+            if (rv != 0) {
+                Logger::error("nghttp2_session_send after recv failed", {
+                    {"error", nghttp2_strerror(rv)}
+                });
+                active_ = false;
+                return;
+            }
+            
+            Logger::info("nghttp2_session_send after recv succeeded");
         }
-        
-        Logger::info("nghttp2_session_send after recv succeeded");
     }
     
     // Continue reading
@@ -510,6 +539,229 @@ int HTTP2Session::on_data_chunk_recv_callback(nghttp2_session* session,
     req.body.insert(req.body.end(), data, data + len);
     
     return 0;
+}
+
+// TCP frame processing methods
+
+void HTTP2Session::set_tcp_forwarder(std::shared_ptr<TCPForwarder> forwarder) {
+    tcp_forwarder_ = forwarder;
+    
+    // Set callback for sending TCP frames back to server
+    if (tcp_forwarder_) {
+        tcp_forwarder_->set_send_callback([this](const std::vector<uint8_t>& frame_data) {
+            send_tcp_frame(frame_data);
+        });
+    }
+}
+
+void HTTP2Session::send_tcp_frame(const std::vector<uint8_t>& frame_data) {
+    if (!active_) {
+        Logger::error("Cannot send TCP frame: session not active");
+        return;
+    }
+    
+    boost::system::error_code ec;
+    size_t written = tls_client_.socket().write_some(boost::asio::buffer(frame_data), ec);
+    
+    if (ec) {
+        Logger::error("Failed to send TCP frame", {
+            {"error", ec.message()}
+        });
+        return;
+    }
+    
+    Logger::debug("Sent TCP frame", {
+        {"bytes", std::to_string(written)}
+    });
+}
+
+bool HTTP2Session::is_tcp_frame(const uint8_t* data, size_t length) {
+    if (length < 1) {
+        return false;
+    }
+    
+    // TCP frames have type 0x10-0x14
+    uint8_t frame_type = data[0];
+    return (frame_type >= 0x10 && frame_type <= 0x14);
+}
+
+size_t HTTP2Session::process_tcp_frames(const uint8_t* data, size_t length) {
+    size_t consumed = 0;
+    
+    while (consumed < length) {
+        const uint8_t* current = data + consumed;
+        size_t remaining = length - consumed;
+        
+        // Need at least 1 byte for frame type
+        if (remaining < 1) {
+            break;
+        }
+        
+        uint8_t frame_type = current[0];
+        
+        // Check if this is a TCP frame
+        if (frame_type < 0x10 || frame_type > 0x14) {
+            // Not a TCP frame, stop processing
+            break;
+        }
+        
+        // Determine frame size based on type
+        size_t frame_size = 0;
+        switch (static_cast<TCPFrameType>(frame_type)) {
+            case TCPFrameType::TCP_OPEN:
+                // type(1) + conn_id(16) + target_port(2) = 19 bytes
+                frame_size = 19;
+                break;
+            case TCPFrameType::TCP_DATA:
+                // type(1) + conn_id(16) + seq(4) + data_len(4) + data
+                if (remaining >= 25) {
+                    // Read data_len from bytes 21-24 (big-endian/network byte order)
+                    uint32_t data_len = (static_cast<uint32_t>(current[21]) << 24) |
+                                       (static_cast<uint32_t>(current[22]) << 16) |
+                                       (static_cast<uint32_t>(current[23]) << 8) |
+                                       static_cast<uint32_t>(current[24]);
+                    
+                    // Log the raw bytes for debugging
+                    Logger::info("TCP_DATA frame header bytes", {
+                        {"byte_21", std::to_string(current[21])},
+                        {"byte_22", std::to_string(current[22])},
+                        {"byte_23", std::to_string(current[23])},
+                        {"byte_24", std::to_string(current[24])},
+                        {"calculated_data_len", std::to_string(data_len)},
+                        {"remaining_bytes", std::to_string(remaining)}
+                    });
+                    
+                    // Sanity check: data_len should be reasonable (< 64KB for single frame)
+                    if (data_len > 65536) {
+                        Logger::error("Invalid TCP_DATA frame: data_len too large", {
+                            {"data_len", std::to_string(data_len)},
+                            {"frame_type", std::to_string(frame_type)}
+                        });
+                        // This might not be a TCP frame, stop processing
+                        break;
+                    }
+                    
+                    frame_size = 25 + data_len;
+                    
+                    Logger::debug("TCP_DATA frame size calculated", {
+                        {"data_len", std::to_string(data_len)},
+                        {"total_frame_size", std::to_string(frame_size)},
+                        {"available", std::to_string(remaining)}
+                    });
+                }
+                break;
+            case TCPFrameType::TCP_CLOSE:
+                // type(1) + conn_id(16) + reason(2) = 19 bytes
+                frame_size = 19;
+                break;
+            case TCPFrameType::TCP_ERROR:
+                // type(1) + conn_id(16) + error_code(2) + msg_len(2) + message
+                if (remaining >= 21) {
+                    uint16_t msg_len = (static_cast<uint16_t>(current[19]) << 8) |
+                                      static_cast<uint16_t>(current[20]);
+                    frame_size = 21 + msg_len;
+                }
+                break;
+            case TCPFrameType::TCP_ACK:
+                // type(1) + conn_id(16) + ack_seq(4) + window_size(4) = 25 bytes
+                frame_size = 25;
+                break;
+        }
+        
+        // Check if we have the complete frame
+        if (frame_size == 0 || remaining < frame_size) {
+            // Incomplete frame, buffer it for next read
+            Logger::info("Incomplete TCP frame", {
+                {"frame_type", std::to_string(frame_type)},
+                {"expected_size", std::to_string(frame_size)},
+                {"available", std::to_string(remaining)}
+            });
+            break;
+        }
+        
+        // Process complete frame
+        handle_tcp_frame(current, frame_size);
+        consumed += frame_size;
+    }
+    
+    return consumed;
+}
+
+void HTTP2Session::handle_tcp_frame(const uint8_t* frame_data, size_t frame_length) {
+    if (frame_length < 1) {
+        return;
+    }
+    
+    uint8_t frame_type = frame_data[0];
+    Logger::info("Handling TCP frame", {
+        {"type", std::to_string(frame_type)},
+        {"length", std::to_string(frame_length)}
+    });
+    
+    if (!tcp_forwarder_) {
+        Logger::warning("TCP frame dropped", {
+            {"reason", "no forwarder configured"}
+        });
+        return;
+    }
+    
+    // Extract connection ID (bytes 1-16)
+    if (frame_length < 17) {
+        Logger::error("TCP frame too short for connection ID");
+        return;
+    }
+    
+    std::array<uint8_t, 16> connection_id;
+    std::copy(frame_data + 1, frame_data + 17, connection_id.begin());
+    
+    switch (static_cast<TCPFrameType>(frame_type)) {
+        case TCPFrameType::TCP_OPEN:
+            if (frame_length >= 19) {
+                uint16_t target_port = (static_cast<uint16_t>(frame_data[17]) << 8) |
+                                      static_cast<uint16_t>(frame_data[18]);
+                tcp_forwarder_->handle_tcp_open(connection_id, target_port);
+            }
+            break;
+            
+        case TCPFrameType::TCP_DATA:
+            if (frame_length >= 25) {
+                uint32_t data_len = (static_cast<uint32_t>(frame_data[21]) << 24) |
+                                   (static_cast<uint32_t>(frame_data[22]) << 16) |
+                                   (static_cast<uint32_t>(frame_data[23]) << 8) |
+                                   static_cast<uint32_t>(frame_data[24]);
+                
+                if (frame_length >= 25 + data_len) {
+                    std::vector<uint8_t> data(frame_data + 25, frame_data + 25 + data_len);
+                    tcp_forwarder_->handle_tcp_data(connection_id, data);
+                }
+            }
+            break;
+            
+        case TCPFrameType::TCP_CLOSE:
+            tcp_forwarder_->handle_tcp_close(connection_id);
+            break;
+            
+        case TCPFrameType::TCP_ERROR:
+            if (frame_length >= 21) {
+                uint16_t error_code = (static_cast<uint16_t>(frame_data[17]) << 8) |
+                                     static_cast<uint16_t>(frame_data[18]);
+                uint16_t msg_len = (static_cast<uint16_t>(frame_data[19]) << 8) |
+                                  static_cast<uint16_t>(frame_data[20]);
+                
+                std::string message;
+                if (frame_length >= 21 + msg_len) {
+                    message = std::string(reinterpret_cast<const char*>(frame_data + 21), msg_len);
+                }
+                
+                tcp_forwarder_->handle_tcp_error(connection_id, error_code, message);
+            }
+            break;
+            
+        case TCPFrameType::TCP_ACK:
+            // ACK frames are informational, not currently used
+            Logger::debug("Received TCP_ACK frame");
+            break;
+    }
 }
 
 }  // namespace agent

@@ -8,6 +8,7 @@
 #include "client/tls_client.h"
 #include "client/http2_session.h"
 #include "forwarder/request_forwarder.h"
+#include "forwarder/tcp_forwarder.h"
 #include "health/heartbeat.h"
 #include "utils/reconnect.h"
 
@@ -45,8 +46,39 @@ void run_agent(const protogate::agent::AgentConfig& config) {
             // Create HTTP/2 session
             HTTP2Session http2_session(io_context, tls_client, config.tunnel.id, config.tunnel.token);
             
-            // Create request forwarder
+            // Create request forwarder for HTTP
             RequestForwarder forwarder(config.local.url, config.local.timeout_seconds * 1000);
+            
+            // Create TCP forwarder for TCP tunneling
+            // Parse target host and port from local.url
+            std::string tcp_host = "localhost";
+            uint16_t tcp_port = 8080;
+            
+            // Parse URL to extract host and port (simple parsing for localhost:port format)
+            std::string url = config.local.url;
+            size_t proto_end = url.find("://");
+            if (proto_end != std::string::npos) {
+                url = url.substr(proto_end + 3);
+            }
+            size_t colon_pos = url.find(':');
+            if (colon_pos != std::string::npos) {
+                tcp_host = url.substr(0, colon_pos);
+                std::string port_str = url.substr(colon_pos + 1);
+                // Remove trailing slash if any
+                size_t slash_pos = port_str.find('/');
+                if (slash_pos != std::string::npos) {
+                    port_str = port_str.substr(0, slash_pos);
+                }
+                tcp_port = static_cast<uint16_t>(std::stoi(port_str));
+            }
+            
+            auto tcp_forwarder = std::make_shared<TCPForwarder>(io_context, tcp_host, tcp_port);
+            http2_session.set_tcp_forwarder(tcp_forwarder);
+            
+            Logger::info("TCP forwarder initialized", {
+                {"target_host", tcp_host},
+                {"target_port", std::to_string(tcp_port)}
+            });
             
             // Create heartbeat manager
             HeartbeatManager heartbeat(http2_session, 

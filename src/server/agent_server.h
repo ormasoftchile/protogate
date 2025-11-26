@@ -3,6 +3,8 @@
 #include "../agent/agent_registry.h"
 #include "../security/tls_manager.h"
 #include "../security/token_validator.h"
+#include "../storage/cache.h"
+#include "../models/tunnel.h"
 #include "io_context_pool.h"
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -37,6 +39,7 @@ public:
                std::shared_ptr<security::TLSManager> tls_manager,
                std::shared_ptr<security::TokenValidator> token_validator,
                std::shared_ptr<agent::AgentRegistry> agent_registry,
+               std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache,
                unsigned short port = 8443);
 
     /**
@@ -68,7 +71,8 @@ private:
         AgentHandshake(boost::asio::io_context& io_context,
                       boost::asio::ssl::context& ssl_context,
                       std::shared_ptr<security::TokenValidator> token_validator,
-                      std::shared_ptr<agent::AgentRegistry> agent_registry);
+                      std::shared_ptr<agent::AgentRegistry> agent_registry,
+                      std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache);
 
         auto& socket() { return socket_.lowest_layer(); }
 
@@ -84,6 +88,7 @@ private:
         boost::asio::ssl::stream<boost::asio::ip::tcp::socket> socket_;
         std::shared_ptr<security::TokenValidator> token_validator_;
         std::shared_ptr<agent::AgentRegistry> agent_registry_;
+        std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache_;
         std::array<char, 4096> buffer_;
         std::string auth_buffer_;
         std::string agent_ip_;
@@ -93,6 +98,7 @@ private:
     std::shared_ptr<security::TLSManager> tls_manager_;
     std::shared_ptr<security::TokenValidator> token_validator_;
     std::shared_ptr<agent::AgentRegistry> agent_registry_;
+    std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache_;
     unsigned short port_;
     bool running_;
     

@@ -28,7 +28,7 @@ static void SetupBenchmark() {
     if (!g_io_pool) {
         g_io_pool = std::make_shared<core::IOContextPool>(4); // 4 threads for performance
         g_agent_registry = std::make_shared<agent::AgentRegistry>(100);
-        g_tunnel_cache = std::make_shared<storage::Cache<std::string, models::Tunnel>>(1000);
+        g_tunnel_cache = std::make_shared<storage::Cache<std::string, models::Tunnel>>(std::chrono::seconds(1000));
         
         g_tcp_proxy = std::make_unique<proxy::TCPProxy>(
             g_io_pool,

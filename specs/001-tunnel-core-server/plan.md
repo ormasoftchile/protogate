@@ -26,7 +26,10 @@ Build the Protogate Core Server - a high-performance reverse tunneling server in
 
 **Target Platform**: Linux x86_64 (Ubuntu 22.04 LTS), containerized for Azure Container Apps (Alpine or Ubuntu-based Docker image)
 
-**Project Type**: Single C++ project (server binary), separate tunnel-agent project to be developed later
+**Project Type**: Two C++ projects in unified repository:
+  - **protogate-server**: Main server binary (src/, accepts inbound connections, routes to agents)
+  - **tunnel-agent**: Agent binary (tunnel-agent/src/, runs on-premises, connects to server, forwards to local services)
+  - **Shared Protocol**: Both use same binary protocol (contracts/agent-protocol.md) and TLS requirements
 
 **Performance Goals**:
   - 100,000 HTTP requests/sec per vCPU instance

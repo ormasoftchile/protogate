@@ -29,6 +29,7 @@ public:
     using ssl_socket = boost::asio::ssl::stream<boost::asio::ip::tcp::socket>;
     using request_callback = std::function<void(const std::string& response, bool error)>;
     using disconnect_callback = std::function<void(const std::string& tunnel_id)>;
+    using tcp_frame_callback = std::function<void(const uint8_t* frame_data, size_t frame_length)>;
 
     /**
      * @brief Connection state
@@ -84,13 +85,19 @@ public:
      */
     void send_tcp_data(const std::string& connection_id,
                       const std::string& data,
-                      request_callback callback);
+                      const request_callback& callback);
 
     /**
      * @brief Send TCP connection close frame
      * @param connection_id TCP connection UUID
      */
     void send_tcp_close(const std::string& connection_id);
+
+    /**
+     * @brief Set TCP frame handler callback
+     * @param callback Function to call when TCP frame is received from agent
+     */
+    void set_tcp_frame_handler(tcp_frame_callback callback);
 
     /**
      * @brief Gracefully close connection
@@ -195,6 +202,7 @@ private:
     std::string tunnel_id_;
     State state_;
     disconnect_callback on_disconnect_;
+    tcp_frame_callback tcp_frame_handler_;
     
     // HTTP/2 session
     nghttp2_session* http2_session_;

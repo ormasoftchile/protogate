@@ -4,10 +4,12 @@
 #include "server/io_context_pool.h"
 #include "server/http_server.h"
 #include "server/agent_server.h"
+#include "server/tcp_server.h"
 #include "security/tls_manager.h"
 #include "security/token_validator.h"
 #include "agent/agent_registry.h"
 #include "proxy/http_proxy.h"
+#include "proxy/tcp_proxy.h"
 #include "storage/cache.h"
 #include "models/tunnel.h"
 #include "models/auth_token.h"
@@ -117,6 +119,11 @@ int main(int argc, char* argv[]) {
         
         LOG_INFO("HTTP proxy initialized");
         
+        // Initialize TCP proxy
+        auto tcp_proxy = std::make_shared<proxy::TCPProxy>(tunnel_cache, agent_registry);
+        
+        LOG_INFO("TCP proxy initialized");
+        
         // Create servers
         auto http_server = std::make_shared<server::HTTPServer>(
             io_pool,
@@ -124,18 +131,37 @@ int main(int argc, char* argv[]) {
             http_proxy,
             config.port);
         
-        auto agent_server = std::make_shared<server::AgentServer>(
-            io_pool,
-            tls_manager,
-            token_validator,
-            agent_registry,
-            config.agent_port);
+    auto agent_server = std::make_shared<server::AgentServer>(
+        io_pool,
+        tls_manager,
+        token_validator,
+        agent_registry,
+        tunnel_cache,
+        config.agent_port);        // Create TCP server if TCP ports are configured
+        std::shared_ptr<server::TCPServer> tcp_server;
+        if (!config.tcp_ports.empty()) {
+            tcp_server = std::make_shared<server::TCPServer>(
+                io_pool,
+                tcp_proxy,
+                agent_registry,
+                tunnel_cache,
+                config.tcp_ports);
+            
+            LOG_INFO("TCP server created", {
+                {"port_count", std::to_string(config.tcp_ports.size())}
+            });
+        }
         
         LOG_INFO("Servers created");
         
         // Start servers
         http_server->start();
         agent_server->start();
+        
+        if (tcp_server) {
+            tcp_server->start();
+            LOG_INFO("TCP server started");
+        }
         
         LOG_INFO("Servers started", {
             {"http_port", std::to_string(config.port)},
@@ -159,6 +185,9 @@ int main(int argc, char* argv[]) {
         // Graceful shutdown
         http_server->stop();
         agent_server->stop();
+        if (tcp_server) {
+            tcp_server->stop();
+        }
         agent_registry->shutdown();
         io_pool->stop();
         

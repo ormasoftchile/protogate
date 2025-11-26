@@ -10,11 +10,13 @@ AgentServer::AgentServer(
     std::shared_ptr<security::TLSManager> tls_manager,
     std::shared_ptr<security::TokenValidator> token_validator,
     std::shared_ptr<agent::AgentRegistry> agent_registry,
+    std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache,
     unsigned short port)
     : io_pool_(io_pool),
       tls_manager_(tls_manager),
       token_validator_(token_validator),
       agent_registry_(agent_registry),
+      tunnel_cache_(tunnel_cache),
       port_(port),
       running_(false),
       acceptor_(io_pool->get_io_context()) {
@@ -113,7 +115,7 @@ void AgentServer::do_accept() {
     auto ssl_context = tls_manager_->get_agent_context();
     
     auto handshake = std::make_shared<AgentHandshake>(
-        io_context, *ssl_context, token_validator_, agent_registry_);
+        io_context, *ssl_context, token_validator_, agent_registry_, tunnel_cache_);
     
     acceptor_.async_accept(handshake->socket(),
         [this, handshake](const boost::system::error_code& ec) {
@@ -136,10 +138,12 @@ AgentServer::AgentHandshake::AgentHandshake(
     boost::asio::io_context& io_context,
     boost::asio::ssl::context& ssl_context,
     std::shared_ptr<security::TokenValidator> token_validator,
-    std::shared_ptr<agent::AgentRegistry> agent_registry)
+    std::shared_ptr<agent::AgentRegistry> agent_registry,
+    std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache)
     : socket_(io_context, ssl_context),
       token_validator_(token_validator),
-      agent_registry_(agent_registry) {
+      agent_registry_(agent_registry),
+      tunnel_cache_(tunnel_cache) {
 }
 
 void AgentServer::AgentHandshake::start() {
@@ -211,6 +215,7 @@ void AgentServer::AgentHandshake::authenticate(const std::string& auth_data) {
     
     std::string authorization;
     std::string tunnel_id_header;
+    std::string tcp_ports_str;
     
     while (std::getline(stream, line) && !line.empty() && line != "\r") {
         if (line.back() == '\r') {
@@ -221,6 +226,8 @@ void AgentServer::AgentHandshake::authenticate(const std::string& auth_data) {
             authorization = line.substr(15);
         } else if (line.compare(0, 13, "X-Tunnel-ID: ") == 0) {
             tunnel_id_header = line.substr(13);
+        } else if (line.compare(0, 13, "X-TCP-Ports: ") == 0) {
+            tcp_ports_str = line.substr(13);
         }
     }
     
@@ -261,8 +268,57 @@ void AgentServer::AgentHandshake::authenticate(const std::string& auth_data) {
     
     observability::Logger::instance().info("Agent authenticated successfully", {
         {"tunnel_id", tunnel_id},
-        {"agent_ip", agent_ip_}
+        {"agent_ip", agent_ip_},
+        {"tcp_ports", tcp_ports_str}
     });
+    
+    // Register TCP tunnel configurations if provided
+    if (!tcp_ports_str.empty()) {
+        // Get existing tunnel to use its target configuration
+        auto existing_tunnel = tunnel_cache_->get(tunnel_id);
+        if (!existing_tunnel) {
+            observability::Logger::instance().error("Cannot register TCP ports - tunnel not found", {
+                {"tunnel_id", tunnel_id}
+            });
+        } else {
+            // Parse comma-separated ports
+            std::istringstream port_stream(tcp_ports_str);
+            std::string port_str;
+            while (std::getline(port_stream, port_str, ',')) {
+                // Trim whitespace
+                port_str.erase(0, port_str.find_first_not_of(" \t"));
+                port_str.erase(port_str.find_last_not_of(" \t") + 1);
+                
+                if (!port_str.empty()) {
+                    uint16_t server_port = static_cast<uint16_t>(std::stoi(port_str));
+                    
+                    // Create TCP tunnel configuration with SAME target as existing tunnel
+                    // The server_port is what clients connect to, target is where agent forwards
+                    std::string tcp_tunnel_key = tunnel_id + ":tcp:" + std::to_string(server_port);
+                    models::Tunnel tcp_tunnel;
+                    tcp_tunnel.tunnel_id = tunnel_id;
+                    tcp_tunnel.protocol = models::TunnelProtocol::TCP;
+                    tcp_tunnel.target_host = existing_tunnel->target_host;
+                    tcp_tunnel.target_port = existing_tunnel->target_port;
+                    tcp_tunnel.status = models::TunnelStatus::ACTIVE;
+                    tcp_tunnel.rate_limit_rpm = 0;
+                    tcp_tunnel.created_at = std::chrono::system_clock::now();
+                    tcp_tunnel.updated_at = tcp_tunnel.created_at;
+                    
+                    // Store with unique key so it doesn't overwrite HTTP tunnel
+                    auto ttl = std::chrono::hours(24);
+                    tunnel_cache_->put(tcp_tunnel_key, tcp_tunnel, ttl);
+                    
+                    observability::Logger::instance().info("TCP tunnel registered", {
+                        {"tunnel_id", tunnel_id},
+                        {"server_port", std::to_string(server_port)},
+                        {"target", existing_tunnel->target_host + ":" + std::to_string(existing_tunnel->target_port)},
+                        {"cache_key", tcp_tunnel_key}
+                    });
+                }
+            }
+        }
+    }
     
     send_response(200, "Connection established");
     

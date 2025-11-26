@@ -32,6 +32,7 @@ set(AGENT_SOURCES
     src/client/tls_client.cpp
     src/client/http2_session.cpp
     src/forwarder/request_forwarder.cpp
+    src/forwarder/tcp_forwarder.cpp
     src/health/heartbeat.cpp
     src/utils/reconnect.cpp
     src/utils/logger.cpp

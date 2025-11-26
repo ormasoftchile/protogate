@@ -1,4 +1,5 @@
 #include "tcp_proxy.h"
+#include "tcp_protocol.h"
 #include "../observability/logger.h"
 #include "../observability/audit_logger.h"
 #include "../security/ip_allowlist.h"
@@ -86,6 +87,7 @@ void TCPProxy::create_connection(
     connection->tunnel_id = tunnel_id;
     connection->client_ip = client_ip;
     connection->target_port = target_port;
+    connection->client_socket = client_socket;
     connection->state = ConnectionState::CONNECTING;
     connection->started_at = std::chrono::steady_clock::now();
     connection->last_activity = connection->started_at;
@@ -107,9 +109,53 @@ void TCPProxy::create_connection(
         {"target_port", std::to_string(target_port)}
     });
     
-    // TODO: Send CONNECT frame to agent via protocol_multiplexer
-    // For now, mark as established
-    connection->state = ConnectionState::ESTABLISHED;
+    // Send TCP_OPEN frame to agent
+    auto agent_conn = agent_registry_->get_agent(tunnel_id);
+    if (agent_conn) {
+        TCPOpenFrame open_frame;
+        open_frame.type = TCPFrameType::TCP_OPEN;
+        // Convert connection_id string to UUID bytes
+        auto uuid = tcp_protocol::generate_connection_id();
+        open_frame.connection_id = uuid;
+        connection->connection_id = tcp_protocol::connection_id_to_string(uuid);
+        // Set target_port to 0 so agent uses its configured target
+        open_frame.target_port = 0;
+        
+        auto frame_data = open_frame.serialize();
+        std::string frame_str(frame_data.begin(), frame_data.end());
+        
+        observability::Logger::instance().info("About to call send_tcp_data with lambda", {
+            {"connection_id", connection->connection_id},
+            {"connection_ptr", std::to_string(reinterpret_cast<uintptr_t>(connection.get()))}
+        });
+        
+        agent_conn->send_tcp_data(connection->connection_id, frame_str, 
+            [connection](const std::string& response, bool error) {
+                observability::Logger::instance().info("*** LAMBDA ENTERED ***", {
+                    {"connection_id", connection->connection_id},
+                    {"connection_ptr", std::to_string(reinterpret_cast<uintptr_t>(connection.get()))},
+                    {"error", error ? "true" : "false"},
+                    {"response_size", std::to_string(response.size())}
+                });
+                if (!error) {
+                    connection->state = ConnectionState::ESTABLISHED;
+                    observability::Logger::instance().info("Connection state set to ESTABLISHED in callback", {
+                        {"connection_id", connection->connection_id}
+                    });
+                } else {
+                    observability::Logger::instance().error("Failed to establish connection - send_tcp_data error", {
+                        {"connection_id", connection->connection_id}
+                    });
+                }
+            });
+    } else {
+        connection->state = ConnectionState::ESTABLISHED;
+    }
+    
+    observability::Logger::instance().info("About to start forwarding", {
+        {"connection_id", connection->connection_id},
+        {"state", std::to_string(static_cast<int>(connection->state))}
+    });
     
     // Start bidirectional forwarding
     start_forwarding(connection, client_socket);
@@ -207,10 +253,11 @@ void TCPProxy::create_connection(
     
     // Create connection context
     auto connection = std::make_shared<TCPConnection>();
-    connection->connection_id = generate_connection_id();
+    std::string temp_id = generate_connection_id();  // Temporary ID for logging
     connection->tunnel_id = tunnel_id;
     connection->client_ip = client_ip;
     connection->target_port = 0;  // Port is determined by server-side routing
+    connection->client_socket = client_socket;
     connection->state = ConnectionState::CONNECTING;
     connection->started_at = std::chrono::steady_clock::now();
     connection->last_activity = connection->started_at;
@@ -219,21 +266,81 @@ void TCPProxy::create_connection(
     connection->send_buffer.reserve(connection->send_window_size);
     connection->recv_buffer.reserve(connection->recv_window_size);
     
-    // Store connection
-    {
-        std::unique_lock lock(connections_mutex_);
-        connections_[connection->connection_id] = connection;
-    }
-    
-    observability::Logger::instance().info("TCP connection created", {
-        {"connection_id", connection->connection_id},
+    observability::Logger::instance().info("TCP connection creating", {
+        {"temp_id", temp_id},
         {"tunnel_id", tunnel_id},
         {"client_ip", client_ip}
     });
     
-    // TODO: Send CONNECT frame to agent via protocol_multiplexer
-    // For now, mark as established
-    connection->state = ConnectionState::ESTABLISHED;
+    // Send TCP_OPEN frame to agent
+    observability::Logger::instance().debug("Attempting to get agent connection", {
+        {"tunnel_id", tunnel_id}
+    });
+    
+    auto agent_conn = agent_registry_->get_agent(tunnel_id);
+    if (agent_conn) {
+        observability::Logger::instance().info("Agent connection found, sending TCP_OPEN", {
+            {"tunnel_id", tunnel_id}
+        });
+        
+        // Set up TCP frame handler if not already set
+        auto tcp_proxy_weak = std::weak_ptr<TCPProxy>(shared_from_this());
+        agent_conn->set_tcp_frame_handler([tcp_proxy_weak](const uint8_t* frame_data, size_t frame_length) {
+            auto tcp_proxy = tcp_proxy_weak.lock();
+            if (tcp_proxy) {
+                tcp_proxy->handle_agent_tcp_frame(frame_data, frame_length);
+            }
+        });
+        
+        TCPOpenFrame open_frame;
+        open_frame.type = TCPFrameType::TCP_OPEN;
+        auto uuid = tcp_protocol::generate_connection_id();
+        open_frame.connection_id = uuid;
+        connection->connection_id = tcp_protocol::connection_id_to_string(uuid);
+        // Set target_port to 0 so agent uses its configured target
+        open_frame.target_port = 0;
+        
+        // NOW store connection with the CORRECT UUID-based ID
+        {
+            std::unique_lock lock(connections_mutex_);
+            connections_[connection->connection_id] = connection;
+        }
+        
+        observability::Logger::instance().info("TCP connection stored in map", {
+            {"connection_id", connection->connection_id},
+            {"tunnel_id", tunnel_id}
+        });
+        
+        auto frame_data = open_frame.serialize();
+        std::string frame_str(frame_data.begin(), frame_data.end());
+        
+        observability::Logger::instance().info("Sending TCP_OPEN frame", {
+            {"tunnel_id", tunnel_id},
+            {"connection_id", connection->connection_id},
+            {"frame_size", std::to_string(frame_str.size())}
+        });
+        
+        agent_conn->send_tcp_data(connection->connection_id, frame_str,
+            [connection, close_callback](const std::string& response, bool error) {
+                observability::Logger::instance().info("*** SECOND LAMBDA ENTERED (create_connection overload) ***", {
+                    {"connection_id", connection->connection_id},
+                    {"error", error ? "true" : "false"}
+                });
+                if (!error) {
+                    connection->state = ConnectionState::ESTABLISHED;
+                    observability::Logger::instance().info("Connection state set to ESTABLISHED (in second lambda)", {
+                        {"connection_id", connection->connection_id}
+                    });
+                } else if (close_callback) {
+                    close_callback(connection->connection_id, boost::asio::error::connection_refused);
+                }
+            });
+    } else {
+        observability::Logger::instance().error("Agent connection NOT found!", {
+            {"tunnel_id", tunnel_id}
+        });
+        connection->state = ConnectionState::ESTABLISHED;
+    }
     
     // Start bidirectional forwarding with close callback
     start_forwarding_with_callback(connection, client_socket, close_callback);
@@ -269,7 +376,11 @@ void TCPProxy::close_connection(const std::string& connection_id, bool graceful)
         });
     }
     
-    // TODO: Send CLOSE frame to agent
+    // Send TCP_CLOSE frame to agent
+    auto agent_conn = agent_registry_->get_agent(connection->tunnel_id);
+    if (agent_conn) {
+        agent_conn->send_tcp_close(connection_id);
+    }
 }
 
 size_t TCPProxy::send_data(
@@ -281,14 +392,42 @@ size_t TCPProxy::send_data(
     
     {
         std::shared_lock lock(connections_mutex_);
+        
+        observability::Logger::instance().info("send_data: looking up connection", {
+            {"connection_id", connection_id},
+            {"connections_count", std::to_string(connections_.size())}
+        });
+        
+        // Log all connection IDs in the map
+        if (!connections_.empty()) {
+            for (const auto& [key, conn] : connections_) {
+                observability::Logger::instance().info("send_data: connection in map", {
+                    {"map_key", key},
+                    {"conn_id", conn->connection_id}
+                });
+            }
+        }
+        
         auto it = connections_.find(connection_id);
         if (it == connections_.end()) {
+            observability::Logger::instance().error("send_data: connection NOT FOUND in map", {
+                {"connection_id", connection_id}
+            });
             return 0;
         }
         connection = it->second;
+        
+        observability::Logger::instance().info("send_data: connection FOUND, checking state", {
+            {"connection_id", connection_id},
+            {"state", std::to_string(static_cast<int>(connection->state))}
+        });
     }
     
     if (connection->state != ConnectionState::ESTABLISHED) {
+        observability::Logger::instance().warning("send_data called but connection not ESTABLISHED", {
+            {"connection_id", connection_id},
+            {"state", std::to_string(static_cast<int>(connection->state))}
+        });
         return 0;
     }
     
@@ -313,7 +452,48 @@ size_t TCPProxy::send_data(
     connection->bytes_sent += to_send;
     connection->last_activity = std::chrono::steady_clock::now();
     
-    // TODO: Send TCP_DATA frame to agent via protocol_multiplexer
+    // Send TCP_DATA frame to agent
+    auto agent_conn = agent_registry_->get_agent(connection->tunnel_id);
+    if (agent_conn) {
+        TCPDataFrame data_frame;
+        data_frame.type = TCPFrameType::TCP_DATA;
+        
+        // Parse connection_id string to UUID bytes
+        try {
+            data_frame.connection_id = tcp_protocol::string_to_connection_id(connection_id);
+        } catch (const std::exception& e) {
+            observability::Logger::instance().error("Invalid connection ID format", {
+                {"connection_id", connection_id},
+                {"error", e.what()}
+            });
+            return 0;
+        }
+        
+        data_frame.sequence_number = static_cast<uint32_t>(connection->bytes_sent - to_send);
+        data_frame.data.assign(data, data + to_send);
+        
+        auto frame_data = data_frame.serialize();
+        std::string frame_str(frame_data.begin(), frame_data.end());
+        
+        observability::Logger::instance().info("Sending TCP_DATA frame to agent", {
+            {"connection_id", connection_id},
+            {"bytes", std::to_string(to_send)},
+            {"sequence", std::to_string(data_frame.sequence_number)}
+        });
+        
+        agent_conn->send_tcp_data(connection_id, frame_str,
+            [connection_id](const std::string&, bool error) {
+                if (error) {
+                    observability::Logger::instance().error("Failed to send TCP data frame", {
+                        {"connection_id", connection_id}
+                    });
+                } else {
+                    observability::Logger::instance().info("TCP_DATA frame sent successfully", {
+                        {"connection_id", connection_id}
+                    });
+                }
+            });
+    }
     
     return to_send;
 }
@@ -566,6 +746,86 @@ bool TCPProxy::validate_ip_allowlist(const models::Tunnel& tunnel, const std::st
     
     // Check if client IP is allowed
     return allowlist_opt->is_allowed(client_ip);
+}
+
+void TCPProxy::handle_agent_tcp_frame(const uint8_t* frame_data, size_t frame_length) {
+    if (frame_length < 1) {
+        return;
+    }
+    
+    uint8_t frame_type = frame_data[0];
+    observability::Logger::instance().info("Processing TCP frame from agent", {
+        {"frame_type", std::to_string(static_cast<int>(frame_type))},
+        {"frame_length", std::to_string(frame_length)}
+    });
+    
+    // Extract connection ID (bytes 1-16)
+    if (frame_length < 17) {
+        observability::Logger::instance().error("TCP frame too short for connection ID");
+        return;
+    }
+    
+    std::array<uint8_t, 16> uuid;
+    std::copy(frame_data + 1, frame_data + 17, uuid.begin());
+    std::string connection_id = tcp_protocol::connection_id_to_string(uuid);
+    
+    switch (static_cast<TCPFrameType>(frame_type)) {
+        case TCPFrameType::TCP_DATA: {
+            // Parse TCP_DATA frame
+            if (frame_length >= 25) {
+                uint32_t data_len = (static_cast<uint32_t>(frame_data[21]) << 24) |
+                                   (static_cast<uint32_t>(frame_data[22]) << 16) |
+                                   (static_cast<uint32_t>(frame_data[23]) << 8) |
+                                   static_cast<uint32_t>(frame_data[24]);
+                
+                if (frame_length >= 25 + data_len) {
+                    observability::Logger::instance().info("Received TCP_DATA from agent", {
+                        {"connection_id", connection_id},
+                        {"data_len", std::to_string(data_len)}
+                    });
+                    
+                    // Forward data to client
+                    receive_data(connection_id, frame_data + 25, data_len);
+                    
+                    // Write buffered data to client
+                    auto conn = get_connection(connection_id);
+                    if (conn && conn->client_socket) {
+                        write_to_client(conn, conn->client_socket);
+                    }
+                }
+            }
+            break;
+        }
+        
+        case TCPFrameType::TCP_CLOSE: {
+            observability::Logger::instance().info("Received TCP_CLOSE from agent", {
+                {"connection_id", connection_id}
+            });
+            close_connection(connection_id, true);
+            break;
+        }
+        
+        case TCPFrameType::TCP_ERROR: {
+            if (frame_length >= 21) {
+                uint16_t error_code = (static_cast<uint16_t>(frame_data[17]) << 8) |
+                                     static_cast<uint16_t>(frame_data[18]);
+                
+                observability::Logger::instance().error("Received TCP_ERROR from agent", {
+                    {"connection_id", connection_id},
+                    {"error_code", std::to_string(error_code)}
+                });
+                
+                handle_error(connection_id, "Agent reported error");
+            }
+            break;
+        }
+        
+        default:
+            observability::Logger::instance().warning("Unknown TCP frame type from agent", {
+                {"frame_type", std::to_string(static_cast<int>(frame_type))}
+            });
+            break;
+    }
 }
 
 }  // namespace proxy

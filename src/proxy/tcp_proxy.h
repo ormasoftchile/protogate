@@ -23,7 +23,7 @@ namespace proxy {
  * - Implement backpressure to prevent buffer overflow
  * - Support connection timeouts and graceful shutdown
  */
-class TCPProxy {
+class TCPProxy : public std::enable_shared_from_this<TCPProxy> {
 public:
     using tunnel_cache_ptr = std::shared_ptr<storage::Cache<std::string, models::Tunnel>>;
     using agent_registry_ptr = std::shared_ptr<agent::AgentRegistry>;
@@ -48,6 +48,7 @@ public:
         std::string client_ip;          // Client source IP address
         uint16_t target_port;           // Target port on agent side
         ConnectionState state;
+        std::shared_ptr<tcp_socket> client_socket;  // Client-side socket
         
         // Statistics
         uint64_t bytes_sent = 0;
@@ -223,6 +224,13 @@ private:
      * @return True if allowed, false if blocked
      */
     bool validate_ip_allowlist(const models::Tunnel& tunnel, const std::string& client_ip);
+    
+    /**
+     * @brief Handle TCP frame received from agent
+     * @param frame_data Raw frame bytes
+     * @param frame_length Frame size in bytes
+     */
+    void handle_agent_tcp_frame(const uint8_t* frame_data, size_t frame_length);
 };
 
 }  // namespace proxy
