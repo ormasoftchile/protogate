@@ -1,7 +1,11 @@
-# Multi-stage Dockerfile for Protogate Server
+# Multi-stage Dockerfile for Protogate Server (ARM64/x86_64)
 # Stage 1: Builder with all build dependencies
 
-FROM ubuntu:22.04 AS builder
+FROM --platform=$BUILDPLATFORM ubuntu:22.04 AS builder
+
+# Build arguments for cross-platform support
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -14,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     tar \
     pkg-config \
     libssl-dev \
+    libnghttp2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install vcpkg
@@ -30,8 +35,17 @@ WORKDIR /src
 COPY CMakeLists.txt vcpkg.json ./
 COPY src/ ./src/
 
-# Install dependencies via vcpkg
-RUN vcpkg install --triplet=x64-linux
+# Determine vcpkg triplet based on target platform
+RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
+        echo "arm64-linux" > /tmp/triplet; \
+    else \
+        echo "x64-linux" > /tmp/triplet; \
+    fi
+
+# Install dependencies via vcpkg for target architecture
+# Force vcpkg to use system cmake instead of downloading
+ENV VCPKG_FORCE_SYSTEM_BINARIES=1
+RUN vcpkg install --triplet=$(cat /tmp/triplet)
 
 # Build the project
 RUN cmake -B build -S . \
