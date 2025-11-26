@@ -28,5 +28,4 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: protogatedevacr.azurecr.io/protogate:v1.0.0
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true
