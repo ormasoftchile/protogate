@@ -19,10 +19,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     add_compile_options(
         -Wall
         -Wextra
-        -Wpedantic
-        -Werror
         -Wno-unused-parameter
     )
+    
+    # For GCC, don't use -Wpedantic because it rejects GNU ##__VA_ARGS__ extension
+    # For Clang, enable pedantic mode
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-Wpedantic)
+    endif()
+    
+    # Treat all warnings as errors
+    add_compile_options(-Werror)
     
     # Debug flags
     if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -33,11 +40,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 endif()
 
-# vcpkg integration
-if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-        CACHE STRING "")
-endif()
+# Find required packages (using system-installed libraries)
+# Boost 1.70+ for Asio and other components
 
 # Static analysis tools
 option(ENABLE_CLANG_TIDY "Enable clang-tidy static analysis" OFF)

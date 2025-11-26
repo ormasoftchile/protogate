@@ -1,0 +1,44 @@
+# Simple Dockerfile using pre-built binary
+# Use this when you've already built locally with CMake
+
+FROM ubuntu:22.04
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -g 1000 protogate && \
+    useradd -r -u 1000 -g protogate protogate
+
+# Copy pre-built binary and dependencies
+WORKDIR /app
+COPY build/protogate-server /app/protogate-server
+RUN chmod +x /app/protogate-server
+
+# Copy any required config files
+COPY .env.example /app/.env.example
+
+# Change ownership
+RUN chown -R protogate:protogate /app
+
+# Switch to non-root user
+USER protogate
+
+# Expose ports
+EXPOSE 443 8443 9100-9199
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Set default environment variables
+ENV PORT=443 \
+    AGENT_PORT=8443 \
+    LOG_LEVEL=info
+
+# Run the server
+ENTRYPOINT ["/app/protogate-server"]
+CMD ["--port", "443", "--agent-port", "8443"]

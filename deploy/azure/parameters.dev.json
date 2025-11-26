@@ -12,7 +12,7 @@
       "value": "protogate"
     },
     "dnsDomainName": {
-      "value": "tunnel-dev.example.com"
+      "value": "protogate-dev.azurecontainerapps.io"
     },
     "imageTag": {
       "value": "latest"

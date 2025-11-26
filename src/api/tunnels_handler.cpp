@@ -390,7 +390,7 @@ bool TunnelsHandler::validate_tunnel_config(const models::Tunnel& tunnel, std::s
         return false;
     }
     
-    if (tunnel.target_port <= 0 || tunnel.target_port > 65535) {
+    if (tunnel.target_port == 0) {
         error = "target_port must be between 1 and 65535";
         return false;
     }

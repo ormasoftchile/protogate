@@ -97,10 +97,9 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
       activeRevisionsMode: 'Single'
       ingress: {
         external: true
-        targetPort: 443
-        transport: 'auto'
+        targetPort: 8443
+        transport: 'http'
         allowInsecure: false
-        exposedPort: 8443
         traffic: [
           {
             latestRevision: true
@@ -108,19 +107,14 @@ resource containerApp 'Microsoft.App/containerApps@2023-05-01' = {
           }
         ]
       }
-      registries: [
-        {
-          server: containerRegistryServer
-          identity: managedIdentity.id
-        }
-      ]
+      registries: []
       secrets: []
     }
     template: {
       containers: [
         {
           name: 'protogate-server'
-          image: containerImage
+          image: 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
           resources: {
             cpu: json(cpu)
             memory: memory

@@ -186,7 +186,7 @@ TCPErrorFrame TCPErrorFrame::deserialize(const uint8_t* data, size_t length) {
     uint16_t len_be = (static_cast<uint16_t>(data[19]) << 8) | data[20];
     uint16_t msg_length = tcp_protocol::ntoh16(len_be);
     
-    if (length < 21 + msg_length) {
+    if (length < static_cast<size_t>(21 + msg_length)) {
         throw std::runtime_error("TCPErrorFrame: incomplete message");
     }
     

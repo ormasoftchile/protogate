@@ -221,14 +221,14 @@ private:
                                  const uint8_t* value, size_t valuelen,
                                  uint8_t flags, void* user_data);
 
-    [[maybe_unused]] nghttp2_session* session_;  // TODO: Stub implementation, will be used when integrating nghttp2
+    nghttp2_session* session_;  // TODO: Stub implementation, will be used when integrating nghttp2
     std::string output_buffer_;
     stream_header_callback header_callback_;
     stream_data_callback data_callback_;
     tcp_frame_callback tcp_frame_callback_;
     
     // Current stream being processed
-    [[maybe_unused]] int32_t current_stream_id_;  // TODO: Will be used for stream tracking in full HTTP/2 implementation
+    int32_t current_stream_id_;  // TODO: Will be used for stream tracking in full HTTP/2 implementation
     std::unordered_map<std::string, std::string> current_headers_;
 };
 

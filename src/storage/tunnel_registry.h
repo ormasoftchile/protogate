@@ -116,7 +116,7 @@ private:
     // Backup timer
     int backup_interval_seconds_;
     bool backup_timer_running_;
-    [[maybe_unused]] std::unique_ptr<std::thread> backup_thread_;
+    std::unique_ptr<std::thread> backup_thread_;
     std::atomic<bool> stop_backup_flag_;
     
     // Callback for monitoring

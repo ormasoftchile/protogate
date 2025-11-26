@@ -19,38 +19,27 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     libnghttp2-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
+    nlohmann-json3-dev \
+    libgtest-dev \
+    libbenchmark-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install vcpkg
-WORKDIR /opt
-RUN git clone https://github.com/Microsoft/vcpkg.git && \
-    ./vcpkg/bootstrap-vcpkg.sh && \
-    ln -s /opt/vcpkg/vcpkg /usr/local/bin/vcpkg
+# Boost.Asio is header-only, included with libboost-system-dev
+# No vcpkg needed - using system packages
 
 ENV VCPKG_ROOT=/opt/vcpkg
 ENV PATH="${VCPKG_ROOT}:${PATH}"
 
 # Copy source code
 WORKDIR /src
-COPY CMakeLists.txt vcpkg.json ./
+COPY CMakeLists.txt ./
 COPY src/ ./src/
 
-# Determine vcpkg triplet based on target platform
-RUN if [ "$TARGETPLATFORM" = "linux/arm64" ]; then \
-        echo "arm64-linux" > /tmp/triplet; \
-    else \
-        echo "x64-linux" > /tmp/triplet; \
-    fi
-
-# Install dependencies via vcpkg for target architecture
-# Force vcpkg to use system cmake instead of downloading
-ENV VCPKG_FORCE_SYSTEM_BINARIES=1
-RUN vcpkg install --triplet=$(cat /tmp/triplet)
-
-# Build the project
+# Build the project (no vcpkg toolchain needed)
 RUN cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
     && cmake --build build --target protogate-server --parallel $(nproc)
 
 # Stage 2: Minimal runtime image based on Alpine

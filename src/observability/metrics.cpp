@@ -8,6 +8,7 @@
 #include <openssl/evp.h>
 #include <openssl/bio.h>
 #include <openssl/buffer.h>
+#include <mutex>
 
 namespace protogate {
 namespace observability {

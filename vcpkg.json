@@ -5,36 +5,15 @@
   "homepage": "https://github.com/ormasoftchile/protogate",
   "license": "MIT",
   "dependencies": [
-    {
-      "name": "boost-asio",
-      "version>=": "1.82.0"
-    },
-    {
-      "name": "boost-system",
-      "version>=": "1.82.0"
-    },
-    {
-      "name": "boost-thread",
-      "version>=": "1.82.0"
-    },
-    {
-      "name": "openssl",
-      "version>=": "3.0.0"
-    },
-    {
-      "name": "nlohmann-json",
-      "version>=": "3.11.0"
-    },
-    {
-      "name": "gtest",
-      "version>=": "1.13.0"
-    },
-    {
-      "name": "benchmark",
-      "version>=": "1.8.0"
-    }
+    "boost-asio",
+    "boost-system",
+    "boost-thread",
+    "openssl",
+    "nlohmann-json",
+    "gtest",
+    "benchmark"
   ],
-  "builtin-baseline": "latest",
+  "builtin-baseline": "9aee6e968f51e15ee93606f064691d8f6d228190",
   "features": {
     "tests": {
       "description": "Enable testing support",

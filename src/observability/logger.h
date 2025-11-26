@@ -124,6 +124,10 @@ private:
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
 
 #define LOG_DEBUG(msg, ...) \
     protogate::observability::Logger::instance().debug(msg, ##__VA_ARGS__)
@@ -142,6 +146,9 @@ private:
 
 #ifdef __clang__
 #pragma clang diagnostic pop
+#endif
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
 #endif
 
 }  // namespace observability

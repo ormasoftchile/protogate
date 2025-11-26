@@ -5,6 +5,7 @@
 #include <memory>
 #include <chrono>
 #include <optional>
+#include <vector>
 
 namespace protogate {
 namespace observability {
