@@ -37,25 +37,28 @@ WORKDIR /src
 COPY CMakeLists.txt ./
 COPY src/ ./src/
 
-# Build the project (no vcpkg toolchain needed)
+# Build the project (static linking for Alpine compatibility)
 RUN cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
     && cmake --build build --target protogate-server --parallel $(nproc)
 
-# Stage 2: Minimal runtime image based on Alpine
-FROM alpine:3.19
+# Stage 2: Minimal runtime image based on Ubuntu (for glibc compatibility)
+FROM ubuntu:22.04
 
-# Install runtime dependencies only
-RUN apk add --no-cache \
-    libstdc++ \
-    libgcc \
-    openssl \
+# Install runtime dependencies only  
+RUN apt-get update && apt-get install -y \
+    libssl3 \
+    libnghttp2-14 \
+    libboost-system1.74.0 \
+    libboost-thread1.74.0 \
     ca-certificates \
-    && rm -rf /var/cache/apk/*
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -g 1000 protogate && \
-    adduser -D -u 1000 -G protogate protogate
+RUN groupadd -g 1000 protogate && \
+    useradd -r -u 1000 -g protogate protogate
 
 # Copy binary from builder
 COPY --from=builder /src/build/protogate-server /usr/local/bin/protogate-server
