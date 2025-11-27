@@ -114,8 +114,6 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
             
             // Parse request
             std::istream request_stream(buffer.get());
-            std::string request_data;
-            std::getline(request_stream, request_data, '\0');
             
             // Get client IP
             std::string client_ip = "unknown";
@@ -124,9 +122,11 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
             } catch (...) {}
             
             // Parse HTTP request (simple parser for method, path, headers)
-            std::istringstream iss(request_data);
+            // Read first line (request line)
             std::string method, path, version;
-            iss >> method >> path >> version;
+            request_stream >> method >> path >> version;
+            std::string line;
+            std::getline(request_stream, line); // consume rest of first line
             
             // Build HTTPRequest for proxy
             proxy::HTTPProxy::HTTPRequest request;
@@ -136,8 +136,7 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
             request.version = version;
             
             // Parse headers
-            std::string line;
-            while (std::getline(iss, line) && !line.empty() && line != "\r") {
+            while (std::getline(request_stream, line) && !line.empty() && line != "\r") {
                 auto colon_pos = line.find(':');
                 if (colon_pos != std::string::npos) {
                     std::string key = line.substr(0, colon_pos);
