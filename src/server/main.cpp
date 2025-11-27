@@ -5,6 +5,7 @@
 #include "server/http_server.h"
 #include "server/agent_server.h"
 #include "server/tcp_server.h"
+#include "server/health_server.h"
 #include "security/tls_manager.h"
 #include "security/token_validator.h"
 #include "agent/agent_registry.h"
@@ -131,13 +132,17 @@ int main(int argc, char* argv[]) {
             http_proxy,
             config.port);
         
-    auto agent_server = std::make_shared<server::AgentServer>(
-        io_pool,
-        tls_manager,
-        token_validator,
-        agent_registry,
-        tunnel_cache,
-        config.agent_port);        // Create TCP server if TCP ports are configured
+        auto health_server = std::make_shared<server::HealthServer>(
+            io_pool,
+            8080);  // HTTP-only health endpoint
+        
+        auto agent_server = std::make_shared<server::AgentServer>(
+            io_pool,
+            tls_manager,
+            token_validator,
+            agent_registry,
+            tunnel_cache,
+            config.agent_port);        // Create TCP server if TCP ports are configured
         std::shared_ptr<server::TCPServer> tcp_server;
         if (!config.tcp_ports.empty()) {
             tcp_server = std::make_shared<server::TCPServer>(
@@ -156,6 +161,7 @@ int main(int argc, char* argv[]) {
         
         // Start servers
         http_server->start();
+        health_server->start();
         agent_server->start();
         
         if (tcp_server) {
@@ -165,6 +171,7 @@ int main(int argc, char* argv[]) {
         
         LOG_INFO("Servers started", {
             {"http_port", std::to_string(config.port)},
+            {"health_port", "8080"},
             {"agent_port", std::to_string(config.agent_port)}
         });
         
@@ -184,6 +191,7 @@ int main(int argc, char* argv[]) {
         
         // Graceful shutdown
         http_server->stop();
+        health_server->stop();
         agent_server->stop();
         if (tcp_server) {
             tcp_server->stop();

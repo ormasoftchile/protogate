@@ -68,11 +68,11 @@ RUN chmod +x /usr/local/bin/protogate-server
 USER protogate
 
 # Expose ports
-EXPOSE 443 8443
+EXPOSE 443 8080 8443
 
-# Health check
+# Health check (use HTTP on port 8080)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:443/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Set environment defaults
 ENV PORT=443

@@ -267,6 +267,7 @@
 - [X] T093 [P] Create deploy/azure/dns-zone.bicep - DNS Zone with wildcard A record
 - [X] T094 [P] Create deploy/azure/log-analytics.bicep - Log Analytics workspace
 - [X] T095 Create deploy/azure/parameters.json - deployment parameters template
+- [X] T095a Configure Container App health probes in deploy/azure/container-app.bicep - HTTP probe on /health with proper timeouts
 - [X] T096 Create deploy/scripts/deploy.sh - automated deployment script with az CLI
 - [X] T097 [P] Create deploy/scripts/generate-token.sh - utility for manual token generation
 - [X] T098 Create docs/architecture.md - high-level architecture diagram with C4 model
