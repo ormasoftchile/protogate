@@ -129,10 +129,11 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
             iss >> method >> path >> version;
             
             // Build HTTPRequest for proxy
-            proxy::HTTPRequest request;
+            proxy::HTTPProxy::HTTPRequest request;
             request.method = method;
             request.path = path;
             request.client_ip = client_ip;
+            request.version = version;
             
             // Parse headers
             std::string line;
@@ -151,7 +152,7 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
             // Extract hostname from Host header
             auto host_it = request.headers.find("Host");
             if (host_it != request.headers.end()) {
-                request.hostname = host_it->second;
+                request.host = host_it->second;
             }
             
             // Handle request via proxy
