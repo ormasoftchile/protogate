@@ -42,7 +42,9 @@ COPY CMakeLists.txt ./
 COPY src/ ./src/
 
 # Build the project (static linking for Alpine compatibility)
-RUN cmake -B build -S . \
+# Remove any existing build directory to force complete rebuild
+RUN rm -rf build && \
+    cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_SHARED_LIBS=OFF \
     && cmake --build build --target protogate-server --parallel $(nproc)
