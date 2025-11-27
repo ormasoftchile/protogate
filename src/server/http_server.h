@@ -12,29 +12,34 @@ namespace protogate {
 namespace server {
 
 /**
- * @brief HTTPS server for client-facing connections
+ * @brief HTTP/HTTPS server for client-facing connections
  * 
  * Responsibilities:
- * - Accept HTTPS connections on port 443
- * - Perform TLS handshake with SNI support
+ * - Accept HTTP or HTTPS connections on specified port
+ * - Perform TLS handshake with SNI support (if TLS enabled)
  * - Parse HTTP requests from clients
  * - Delegate to HTTPProxy for tunnel routing
  * - Stream responses back to clients
  * - Handle connection errors and timeouts
+ * 
+ * Note: When deployed on Azure Container Apps, ingress terminates TLS
+ * and forwards plain HTTP to the container, so use_tls should be false.
  */
 class HTTPServer {
 public:
     /**
      * @brief Initialize HTTP server
      * @param io_pool IO context pool for async operations
-     * @param tls_manager TLS manager for certificate loading
+     * @param tls_manager TLS manager for certificate loading (can be null if use_tls=false)
      * @param http_proxy HTTP proxy for request routing
      * @param port Listen port (default 443)
+     * @param use_tls Enable TLS (false for plain HTTP, true for HTTPS)
      */
     HTTPServer(std::shared_ptr<IOContextPool> io_pool,
               std::shared_ptr<security::TLSManager> tls_manager,
               std::shared_ptr<proxy::HTTPProxy> http_proxy,
-              unsigned short port = 443);
+              unsigned short port = 443,
+              bool use_tls = false);
 
     /**
      * @brief Start accepting connections
@@ -56,6 +61,11 @@ private:
      * @brief Accept next client connection
      */
     void do_accept();
+    
+    /**
+     * @brief Handle plain HTTP connection (no TLS)
+     */
+    void handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket> socket);
 
     /**
      * @brief Handle single client connection
@@ -97,6 +107,7 @@ private:
     std::shared_ptr<proxy::HTTPProxy> http_proxy_;
     unsigned short port_;
     bool running_;
+    bool use_tls_;
     
     boost::asio::ip::tcp::acceptor acceptor_;
 };

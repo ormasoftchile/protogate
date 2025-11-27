@@ -9,16 +9,19 @@ HTTPServer::HTTPServer(
     std::shared_ptr<IOContextPool> io_pool,
     std::shared_ptr<security::TLSManager> tls_manager,
     std::shared_ptr<proxy::HTTPProxy> http_proxy,
-    unsigned short port)
+    unsigned short port,
+    bool use_tls)
     : io_pool_(io_pool),
       tls_manager_(tls_manager),
       http_proxy_(http_proxy),
       port_(port),
       running_(false),
+      use_tls_(use_tls),
       acceptor_(io_pool->get_io_context()) {
     
     observability::Logger::instance().info("HTTPServer initialized", {
-        {"port", std::to_string(port_)}
+        {"port", std::to_string(port_)},
+        {"tls", use_tls_ ? "enabled" : "disabled"}
     });
 }
 
@@ -68,22 +71,99 @@ void HTTPServer::do_accept() {
     }
     
     auto& io_context = io_pool_->get_io_context();
-    auto ssl_context = tls_manager_->get_client_context();
     
-    auto conn = std::make_shared<Connection>(io_context, *ssl_context, tls_manager_, http_proxy_);
+    if (use_tls_) {
+        // TLS connection
+        auto ssl_context = tls_manager_->get_client_context();
+        auto conn = std::make_shared<Connection>(io_context, *ssl_context, tls_manager_, http_proxy_);
+        
+        acceptor_.async_accept(conn->socket(),
+            [this, conn](const boost::system::error_code& ec) {
+                if (!ec) {
+                    conn->start();
+                } else {
+                    observability::Logger::instance().warning("Accept error", {
+                        {"error", ec.message()}
+                    });
+                }
+                do_accept();
+            });
+    } else {
+        // Plain HTTP connection - use health_server style handling
+        auto socket = std::make_shared<boost::asio::ip::tcp::socket>(io_context);
+        
+        acceptor_.async_accept(*socket,
+            [this, socket](const boost::system::error_code& ec) {
+                if (!ec) {
+                    handle_plain_http(socket);
+                }
+                do_accept();
+            });
+    }
+}
+
+void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket> socket) {
+    // Read HTTP request
+    auto buffer = std::make_shared<boost::asio::streambuf>();
     
-    acceptor_.async_accept(conn->socket(),
-        [this, conn](const boost::system::error_code& ec) {
-            if (!ec) {
-                conn->start();
-            } else {
-                observability::Logger::instance().warning("Accept error", {
-                    {"error", ec.message()}
-                });
+    boost::asio::async_read_until(*socket, *buffer, "\r\n\r\n",
+        [this, socket, buffer](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+            if (ec) {
+                return;
             }
             
-            // Accept next connection
-            do_accept();
+            // Parse request
+            std::istream request_stream(buffer.get());
+            std::string request_data;
+            std::getline(request_stream, request_data, '\0');
+            
+            // Get client IP
+            std::string client_ip = "unknown";
+            try {
+                client_ip = socket->remote_endpoint().address().to_string();
+            } catch (...) {}
+            
+            // Parse HTTP request (simple parser for method, path, headers)
+            std::istringstream iss(request_data);
+            std::string method, path, version;
+            iss >> method >> path >> version;
+            
+            // Build HTTPRequest for proxy
+            proxy::HTTPRequest request;
+            request.method = method;
+            request.path = path;
+            request.client_ip = client_ip;
+            
+            // Parse headers
+            std::string line;
+            while (std::getline(iss, line) && !line.empty() && line != "\r") {
+                auto colon_pos = line.find(':');
+                if (colon_pos != std::string::npos) {
+                    std::string key = line.substr(0, colon_pos);
+                    std::string value = line.substr(colon_pos + 1);
+                    // Trim whitespace
+                    value.erase(0, value.find_first_not_of(" \t\r\n"));
+                    value.erase(value.find_last_not_of(" \t\r\n") + 1);
+                    request.headers[key] = value;
+                }
+            }
+            
+            // Extract hostname from Host header
+            auto host_it = request.headers.find("Host");
+            if (host_it != request.headers.end()) {
+                request.hostname = host_it->second;
+            }
+            
+            // Handle request via proxy
+            http_proxy_->handle_request(request, 
+                [socket](const std::string& response, bool close_connection) {
+                    boost::asio::async_write(*socket, boost::asio::buffer(response),
+                        [socket, close_connection](const boost::system::error_code& ec, std::size_t) {
+                            if (close_connection || ec) {
+                                socket->close();
+                            }
+                        });
+                });
         });
 }
 

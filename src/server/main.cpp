@@ -126,11 +126,13 @@ int main(int argc, char* argv[]) {
         LOG_INFO("TCP proxy initialized");
         
         // Create servers
+        // HTTP server on port 443 (plain HTTP - Azure ingress terminates TLS)
         auto http_server = std::make_shared<server::HTTPServer>(
             io_pool,
-            tls_manager,
+            nullptr,  // No TLS manager needed for plain HTTP
             http_proxy,
-            config.port);
+            config.port,
+            false);  // use_tls = false
         
         auto health_server = std::make_shared<server::HealthServer>(
             io_pool,
