@@ -1,6 +1,7 @@
 #include "http_server.h"
 #include "../observability/logger.h"
 #include <openssl/ssl.h>
+#include <algorithm>
 
 namespace protogate {
 namespace server {
@@ -9,11 +10,13 @@ HTTPServer::HTTPServer(
     std::shared_ptr<IOContextPool> io_pool,
     std::shared_ptr<security::TLSManager> tls_manager,
     std::shared_ptr<proxy::HTTPProxy> http_proxy,
+    std::shared_ptr<api::Router> router,
     unsigned short port,
     bool use_tls)
     : io_pool_(io_pool),
       tls_manager_(tls_manager),
       http_proxy_(http_proxy),
+      router_(router),
       port_(port),
       running_(false),
       use_tls_(use_tls),
@@ -21,7 +24,8 @@ HTTPServer::HTTPServer(
     
     observability::Logger::instance().info("HTTPServer initialized", {
         {"port", std::to_string(port_)},
-        {"tls", use_tls_ ? "enabled" : "disabled"}
+        {"tls", use_tls_ ? "enabled" : "disabled"},
+        {"router", router_ ? "enabled" : "disabled"}
     });
 }
 
@@ -130,14 +134,8 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
             std::string line;
             std::getline(request_stream, line); // consume rest of first line
             
-            // Build HTTPRequest for proxy
-            proxy::HTTPProxy::HTTPRequest request;
-            request.method = method;
-            request.path = path;
-            request.client_ip = client_ip;
-            request.version = version;
-            
-            // Parse headers
+            // Parse headers into a map
+            std::unordered_map<std::string, std::string> headers;
             while (std::getline(request_stream, line) && !line.empty() && line != "\r") {
                 auto colon_pos = line.find(':');
                 if (colon_pos != std::string::npos) {
@@ -146,13 +144,81 @@ void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket>
                     // Trim whitespace
                     value.erase(0, value.find_first_not_of(" \t\r\n"));
                     value.erase(value.find_last_not_of(" \t\r\n") + 1);
-                    request.headers[key] = value;
+                    // Convert header name to lowercase for case-insensitive comparison
+                    std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+                    headers[key] = value;
                 }
             }
             
+            // Check if this is a Management API request (/v1/*)
+            if (path.rfind("/v1/", 0) == 0 && router_) {
+                observability::Logger::instance().info("Routing to Management API", {
+                    {"path", path},
+                    {"method", method}
+                });
+                
+                // Read request body for POST/PUT
+                std::string body;
+                if (method == "POST" || method == "PUT") {
+                    auto content_length_it = headers.find("content-length");
+                    if (content_length_it != headers.end()) {
+                        try {
+                            size_t body_length = std::stoul(content_length_it->second);
+                            if (body_length > 0 && body_length < 1024 * 1024) {  // 1MB limit
+                                // Read body from remaining data in buffer
+                                std::stringstream ss;
+                                ss << request_stream.rdbuf();
+                                body = ss.str();
+                            }
+                        } catch (...) {
+                            // Invalid content-length, ignore
+                        }
+                    }
+                }
+                
+                // Process API request
+                api::HttpRequest api_request;
+                api_request.method = method;
+                api_request.path = path;
+                api_request.headers = headers;
+                api_request.body = body;
+                api_request.remote_ip = client_ip;
+                
+                api::HttpResponse api_response;
+                bool routed = router_->route(api_request, api_response);
+                
+                // Serialize response
+                std::string response = api::Router::serialize_response(api_response);
+                
+                observability::Logger::instance().info("Sending Management API response", {
+                    {"status", std::to_string(api_response.status_code)},
+                    {"routed", routed ? "true" : "false"}
+                });
+                
+                // Send response
+                boost::asio::async_write(*socket, boost::asio::buffer(response),
+                    [socket](const boost::system::error_code& ec, std::size_t) {
+                        if (ec) {
+                            observability::Logger::instance().warning("Error writing response", {
+                                {"error", ec.message()}
+                            });
+                        }
+                        socket->close();
+                    });
+                return;
+            }
+            
+            // Not a Management API request - route to HTTP proxy
+            proxy::HTTPProxy::HTTPRequest request;
+            request.method = method;
+            request.path = path;
+            request.client_ip = client_ip;
+            request.version = version;
+            request.headers = headers;
+            
             // Extract hostname from Host header
-            auto host_it = request.headers.find("Host");
-            if (host_it != request.headers.end()) {
+            auto host_it = headers.find("host");
+            if (host_it != headers.end()) {
                 request.host = host_it->second;
             }
             

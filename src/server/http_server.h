@@ -2,6 +2,7 @@
 
 #include "../proxy/http_proxy.h"
 #include "../security/tls_manager.h"
+#include "../api/router.h"
 #include "io_context_pool.h"
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
@@ -32,12 +33,14 @@ public:
      * @param io_pool IO context pool for async operations
      * @param tls_manager TLS manager for certificate loading (can be null if use_tls=false)
      * @param http_proxy HTTP proxy for request routing
+     * @param router API router for Management API endpoints (can be null)
      * @param port Listen port (default 443)
      * @param use_tls Enable TLS (false for plain HTTP, true for HTTPS)
      */
     HTTPServer(std::shared_ptr<IOContextPool> io_pool,
               std::shared_ptr<security::TLSManager> tls_manager,
               std::shared_ptr<proxy::HTTPProxy> http_proxy,
+              std::shared_ptr<api::Router> router,
               unsigned short port = 443,
               bool use_tls = false);
 
@@ -105,6 +108,7 @@ private:
     std::shared_ptr<IOContextPool> io_pool_;
     std::shared_ptr<security::TLSManager> tls_manager_;
     std::shared_ptr<proxy::HTTPProxy> http_proxy_;
+    std::shared_ptr<api::Router> router_;
     unsigned short port_;
     bool running_;
     bool use_tls_;

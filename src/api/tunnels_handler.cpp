@@ -27,25 +27,25 @@ TunnelsHandler::TunnelsHandler(
 }
 
 void TunnelsHandler::register_routes(Router& router) {
-    router.post("/api/v1/tunnels", 
+    router.post("/v1/tunnels", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_create_tunnel(req, res); });
     
-    router.get("/api/v1/tunnels", 
+    router.get("/v1/tunnels", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_list_tunnels(req, res); });
     
-    router.get("/api/v1/tunnels/{id}", 
+    router.get("/v1/tunnels/{id}", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_get_tunnel(req, res); });
     
-    router.delete_route("/api/v1/tunnels/{id}", 
+    router.delete_route("/v1/tunnels/{id}", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_delete_tunnel(req, res); });
     
-    router.post("/api/v1/tunnels/{id}/rotate-token", 
+    router.post("/v1/tunnels/{id}/rotate-token", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_rotate_token(req, res); });
     
-    router.get("/api/v1/tunnels/{id}/metrics", 
+    router.get("/v1/tunnels/{id}/metrics", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_get_tunnel_metrics(req, res); });
     
-    router.get("/api/v1/tunnels/{id}/agents", 
+    router.get("/v1/tunnels/{id}/agents", 
         [this](const HttpRequest& req, HttpResponse& res) { handle_get_tunnel_agents(req, res); });
 }
 

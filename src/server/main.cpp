@@ -12,8 +12,11 @@
 #include "proxy/http_proxy.h"
 #include "proxy/tcp_proxy.h"
 #include "storage/cache.h"
+#include "storage/keyvault_client.h"
 #include "models/tunnel.h"
 #include "models/auth_token.h"
+#include "api/router.h"
+#include "api/tunnels_handler.h"
 #include <iostream>
 #include <csignal>
 #include <atomic>
@@ -125,12 +128,36 @@ int main(int argc, char* argv[]) {
         
         LOG_INFO("TCP proxy initialized");
         
+        // Create Router for Management API
+        auto router = std::make_shared<api::Router>();
+        
+        LOG_INFO("API Router created");
+        
+        // Create KeyVault client
+        auto keyvault_client = std::make_shared<storage::KeyVaultClient>(config.key_vault_uri);
+        
+        LOG_INFO("KeyVault client initialized", {
+            {"key_vault_uri", config.key_vault_uri}
+        });
+        
+        // Create TunnelsHandler and register routes
+        auto tunnels_handler = std::make_shared<api::TunnelsHandler>(
+            tunnel_cache,
+            token_cache,
+            keyvault_client,
+            agent_registry);
+        
+        tunnels_handler->register_routes(*router);
+        
+        LOG_INFO("TunnelsHandler registered with Router");
+        
         // Create servers
         // HTTP server on port 443 (plain HTTP - Azure ingress terminates TLS)
         auto http_server = std::make_shared<server::HTTPServer>(
             io_pool,
             nullptr,  // No TLS manager needed for plain HTTP
             http_proxy,
+            router,   // Pass router for Management API
             config.port,
             false);  // use_tls = false
         
