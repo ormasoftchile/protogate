@@ -336,10 +336,11 @@ TEST_F(ManagementAPITest, GetTunnelMetrics) {
     
     json response_json = json::parse(response.body);
     EXPECT_EQ(response_json["tunnel_id"], "metrics-test");
-    EXPECT_TRUE(response_json.contains("request_count"));
-    EXPECT_TRUE(response_json.contains("bytes_sent"));
-    EXPECT_TRUE(response_json.contains("bytes_received"));
-    EXPECT_TRUE(response_json.contains("active_connections"));
+    EXPECT_TRUE(response_json.contains("connections"));
+    EXPECT_TRUE(response_json.contains("throughput"));
+    EXPECT_TRUE(response_json["throughput"].contains("bytes_sent"));
+    EXPECT_TRUE(response_json["throughput"].contains("bytes_received"));
+    EXPECT_TRUE(response_json["connections"].contains("active_http_connections"));
 }
 
 // Test: Get tunnel agents (no agents connected)

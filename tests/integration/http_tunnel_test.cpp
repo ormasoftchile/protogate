@@ -14,15 +14,15 @@ protected:
         agent_registry_ = std::make_shared<agent::AgentRegistry>(50);
         http_proxy_ = std::make_shared<proxy::HTTPProxy>(tunnel_cache_, agent_registry_);
         
-        // Setup test tunnel
+        // Setup test tunnel with tunnel_id "api" to match hostname "api.tunnel.test.com"
         models::Tunnel tunnel;
-        tunnel.tunnel_id = "test_api";
+        tunnel.tunnel_id = "api";
         tunnel.protocol = models::TunnelProtocol::HTTP;
         tunnel.target_host = "localhost";
         tunnel.target_port = 8080;
         tunnel.status = models::TunnelStatus::ACTIVE;
         
-        tunnel_cache_->put("test_api", tunnel, std::chrono::hours(1));
+        tunnel_cache_->put("api", tunnel, std::chrono::hours(1));
     }
 
     std::shared_ptr<storage::Cache<std::string, models::Tunnel>> tunnel_cache_;
@@ -200,7 +200,7 @@ TEST_F(HTTPTunnelTest, HTTPRequestParsingWithBody) {
 // Test hostname to tunnel ID matching
 TEST_F(HTTPTunnelTest, HostnameToTunnelIDMatching) {
     std::string tunnel_id = http_proxy_->match_tunnel("api.tunnel.test.com");
-    EXPECT_EQ(tunnel_id, "test_api");
+    EXPECT_EQ(tunnel_id, "api");
 }
 
 // Test IP allowlist validation - allowed IP

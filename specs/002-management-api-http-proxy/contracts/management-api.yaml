@@ -1,0 +1,529 @@
+# Management API Specification
+
+OpenAPI 3.0 specification for Protogate Management API
+
+```yaml
+openapi: 3.0.0
+info:
+  title: Protogate Management API
+  version: 1.0.0
+  description: REST API for managing tunnels in Protogate reverse tunnel server
+  contact:
+    name: Protogate Team
+    email: dev@protogate.io
+
+servers:
+  - url: https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io
+    description: Development server (Azure Container Apps)
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /v1/tunnels:
+    post:
+      summary: Create a new tunnel
+      description: Registers a new tunnel and generates an authentication token
+      operationId: createTunnel
+      tags:
+        - Tunnels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTunnelRequest'
+            examples:
+              httpTunnel:
+                value:
+                  tunnel_id: "my-api"
+                  protocol: "HTTP"
+                  local_url: "http://localhost:3000"
+              tcpTunnel:
+                value:
+                  tunnel_id: "printer"
+                  protocol: "TCP"
+                  local_port: 9100
+      responses:
+        '201':
+          description: Tunnel created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateTunnelResponse'
+              example:
+                tunnel_id: "my-api"
+                protocol: "HTTP"
+                local_url: "http://localhost:3000"
+                token: "tnl_7B8f9A3c2D1e4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5"
+                status: "registered"
+                agent_status: "disconnected"
+                created_at: "2025-11-27T12:00:00Z"
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "validation_error"
+                message: "tunnel_id is required"
+                details:
+                  field: "tunnel_id"
+                  reason: "missing_field"
+        '409':
+          description: Tunnel already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "conflict"
+                message: "Tunnel with ID 'my-api' already exists"
+                tunnel_id: "my-api"
+
+    get:
+      summary: List all tunnels
+      description: Returns all registered tunnels with their status
+      operationId: listTunnels
+      tags:
+        - Tunnels
+      parameters:
+        - name: status
+          in: query
+          description: Filter by agent connection status
+          schema:
+            type: string
+            enum: [connected, disconnected, all]
+            default: all
+        - name: limit
+          in: query
+          description: Maximum number of results to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Number of results to skip (for pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: List of tunnels
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TunnelSummary'
+                  total:
+                    type: integer
+                    description: Total number of tunnels (ignoring pagination)
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+              example:
+                tunnels:
+                  - tunnel_id: "my-api"
+                    protocol: "HTTP"
+                    agent_status: "connected"
+                    agent_count: 1
+                    created_at: "2025-11-27T12:00:00Z"
+                    last_request_at: "2025-11-27T12:30:00Z"
+                  - tunnel_id: "printer"
+                    protocol: "TCP"
+                    agent_status: "disconnected"
+                    agent_count: 0
+                    created_at: "2025-11-27T11:00:00Z"
+                    last_request_at: null
+                total: 2
+                limit: 50
+                offset: 0
+
+  /v1/tunnels/{tunnel_id}:
+    get:
+      summary: Get tunnel details
+      description: Returns detailed information about a specific tunnel
+      operationId: getTunnel
+      tags:
+        - Tunnels
+      parameters:
+        - name: tunnel_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier for the tunnel
+      responses:
+        '200':
+          description: Tunnel details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TunnelDetails'
+              example:
+                tunnel_id: "my-api"
+                protocol: "HTTP"
+                local_url: "http://localhost:3000"
+                status: "active"
+                agent_status: "connected"
+                created_at: "2025-11-27T12:00:00Z"
+                updated_at: "2025-11-27T12:00:00Z"
+                agents:
+                  - agent_id: "agent-123"
+                    remote_ip: "203.0.113.45"
+                    connected_at: "2025-11-27T12:05:00Z"
+                    last_heartbeat: "2025-11-27T12:30:00Z"
+                    bytes_sent: 1024000
+                    bytes_received: 2048000
+                metrics:
+                  total_requests: 1523
+                  total_bytes_sent: 5242880
+                  total_bytes_received: 10485760
+                  last_request_at: "2025-11-27T12:30:15Z"
+        '404':
+          description: Tunnel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "not_found"
+                message: "Tunnel 'nonexistent' not found"
+                tunnel_id: "nonexistent"
+
+    delete:
+      summary: Delete tunnel
+      description: Removes tunnel and disconnects all agents
+      operationId: deleteTunnel
+      tags:
+        - Tunnels
+      parameters:
+        - name: tunnel_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Tunnel deleted successfully
+        '404':
+          description: Tunnel not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /v1/tunnels/{tunnel_id}/agents:
+    get:
+      summary: List connected agents
+      description: Returns all agents currently connected to this tunnel
+      operationId: listTunnelAgents
+      tags:
+        - Tunnels
+        - Agents
+      parameters:
+        - name: tunnel_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of connected agents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnel_id:
+                    type: string
+                  agents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentInfo'
+              example:
+                tunnel_id: "my-api"
+                agents:
+                  - agent_id: "agent-123"
+                    remote_ip: "203.0.113.45"
+                    remote_port: 54321
+                    connected_at: "2025-11-27T12:05:00Z"
+                    last_heartbeat: "2025-11-27T12:30:00Z"
+                    bytes_sent: 1024000
+                    bytes_received: 2048000
+                    active_connections: 3
+        '404':
+          description: Tunnel not found
+
+  /v1/tunnels/{tunnel_id}/rotate-token:
+    post:
+      summary: Rotate tunnel token
+      description: Generates a new authentication token with grace period for old token
+      operationId: rotateTunnelToken
+      tags:
+        - Tunnels
+      parameters:
+        - name: tunnel_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                grace_period_seconds:
+                  type: integer
+                  minimum: 60
+                  maximum: 3600
+                  default: 300
+                  description: How long old token remains valid (seconds)
+      responses:
+        '200':
+          description: Token rotated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnel_id:
+                    type: string
+                  old_token:
+                    type: string
+                    description: Previous token (for reference only)
+                  new_token:
+                    type: string
+                    description: New token to use for agent connections
+                  grace_period_seconds:
+                    type: integer
+                    description: How long old token remains valid
+                  old_token_expires_at:
+                    type: string
+                    format: date-time
+              example:
+                tunnel_id: "my-api"
+                old_token: "tnl_7B8f9A3c2D1e4F5G6H7I8J9K0L1M2N3O4P5Q6R7S8T9U0V1W2X3Y4Z5"
+                new_token: "tnl_9D0e1F2g3H4i5J6k7L8m9N0o1P2q3R4s5T6u7V8w9X0y1Z2a3B4c5D6"
+                grace_period_seconds: 300
+                old_token_expires_at: "2025-11-27T12:35:00Z"
+        '404':
+          description: Tunnel not found
+
+  /health:
+    get:
+      summary: Health check
+      description: Returns server health status including tunnel metrics
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  version:
+                    type: string
+                  service:
+                    type: string
+                  timestamp:
+                    type: integer
+                    format: int64
+                  metrics:
+                    type: object
+                    properties:
+                      active_tunnels:
+                        type: integer
+                      connected_agents:
+                        type: integer
+                      total_http_requests:
+                        type: integer
+                      active_http_connections:
+                        type: integer
+                      active_tcp_connections:
+                        type: integer
+              example:
+                status: "healthy"
+                version: "1.0.0"
+                service: "protogate"
+                timestamp: 1764243784596
+                metrics:
+                  active_tunnels: 15
+                  connected_agents: 12
+                  total_http_requests: 45231
+                  active_http_connections: 8
+                  active_tcp_connections: 3
+
+components:
+  schemas:
+    CreateTunnelRequest:
+      type: object
+      required:
+        - tunnel_id
+        - protocol
+      properties:
+        tunnel_id:
+          type: string
+          pattern: '^[a-z0-9-]+$'
+          minLength: 1
+          maxLength: 63
+          description: Unique identifier (lowercase alphanumeric and hyphens)
+        protocol:
+          type: string
+          enum: [HTTP, TCP]
+        local_url:
+          type: string
+          format: uri
+          description: Required for HTTP tunnels (e.g., http://localhost:3000)
+        local_port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: Required for TCP tunnels
+
+    CreateTunnelResponse:
+      type: object
+      properties:
+        tunnel_id:
+          type: string
+        protocol:
+          type: string
+        local_url:
+          type: string
+        local_port:
+          type: integer
+        token:
+          type: string
+          description: Authentication token for agent connections
+        status:
+          type: string
+          enum: [registered, active]
+        agent_status:
+          type: string
+          enum: [connected, disconnected]
+        created_at:
+          type: string
+          format: date-time
+
+    TunnelSummary:
+      type: object
+      properties:
+        tunnel_id:
+          type: string
+        protocol:
+          type: string
+        agent_status:
+          type: string
+          enum: [connected, disconnected]
+        agent_count:
+          type: integer
+          description: Number of connected agents
+        created_at:
+          type: string
+          format: date-time
+        last_request_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    TunnelDetails:
+      type: object
+      properties:
+        tunnel_id:
+          type: string
+        protocol:
+          type: string
+        local_url:
+          type: string
+        local_port:
+          type: integer
+        status:
+          type: string
+          enum: [registered, active, suspended]
+        agent_status:
+          type: string
+          enum: [connected, disconnected]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        agents:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentInfo'
+        metrics:
+          $ref: '#/components/schemas/TunnelMetrics'
+
+    AgentInfo:
+      type: object
+      properties:
+        agent_id:
+          type: string
+        remote_ip:
+          type: string
+        remote_port:
+          type: integer
+        connected_at:
+          type: string
+          format: date-time
+        last_heartbeat:
+          type: string
+          format: date-time
+        bytes_sent:
+          type: integer
+          format: int64
+        bytes_received:
+          type: integer
+          format: int64
+        active_connections:
+          type: integer
+
+    TunnelMetrics:
+      type: object
+      properties:
+        total_requests:
+          type: integer
+          format: int64
+        total_bytes_sent:
+          type: integer
+          format: int64
+        total_bytes_received:
+          type: integer
+          format: int64
+        last_request_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          enum: [validation_error, not_found, conflict, internal_error, service_unavailable]
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+```
