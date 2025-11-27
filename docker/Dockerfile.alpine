@@ -6,6 +6,10 @@ FROM --platform=$BUILDPLATFORM ubuntu:22.04 AS builder
 # Build arguments for cross-platform support
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG CACHEBUST=1
+
+# Force cache bust
+RUN echo "Cache bust: ${CACHEBUST}"
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \

@@ -29,3 +29,5 @@ jobs:
           push: true
           tags: protogatedevacr.azurecr.io/protogate:v1.0.0
           no-cache: true
+          build-args: |
+            CACHEBUST=${{ github.run_number }}
