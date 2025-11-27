@@ -103,6 +103,8 @@ void HTTPServer::do_accept() {
 }
 
 void HTTPServer::handle_plain_http(std::shared_ptr<boost::asio::ip::tcp::socket> socket) {
+    observability::Logger::instance().info("handle_plain_http called", {});
+    
     // Read HTTP request
     auto buffer = std::make_shared<boost::asio::streambuf>();
     
