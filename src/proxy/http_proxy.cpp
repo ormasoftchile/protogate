@@ -299,7 +299,9 @@ std::string HTTPProxy::HTTPResponse::to_string() const {
     }
     
     // Content-Length (if not present)
-    if (headers.find("content-length") == headers.end() && !body.empty()) {
+    if (headers.find("Content-Length") == headers.end() && 
+        headers.find("content-length") == headers.end() && 
+        !body.empty()) {
         oss << "Content-Length: " << body.size() << "\r\n";
     }
     
