@@ -110,6 +110,8 @@ deploy_server_app() {
             --cpu 0.5 \
             --memory 1Gi \
             --env-vars \
+                "PORT=8080" \
+                "AGENT_PORT=8443" \
                 "KEY_VAULT_URI=${KEYVAULT_URI:-}" \
                 "DNS_ZONE=tunnel.${ENVIRONMENT}.example.com" \
                 "LOG_LEVEL=INFO" \
