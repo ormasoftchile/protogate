@@ -18,10 +18,10 @@
 
 **Purpose**: Basic project structure and script scaffolding
 
-- [ ] T001 Create scripts directory structure: `scripts/`, `scripts/common.sh`
-- [ ] T002 Create test directory structure: `test/e2e/`, `test/e2e/fixtures/`
-- [ ] T003 [P] Create Azure configuration directory: `azure/`, `azure/.gitignore`
-- [ ] T004 [P] Document prerequisites in `specs/001-azure-deployment-test/quickstart.md`
+- [X] T001 Create scripts directory structure: `scripts/`, `scripts/common.sh`
+- [X] T002 Create test directory structure: `test/e2e/`, `test/e2e/fixtures/`
+- [X] T003 [P] Create Azure configuration directory: `azure/`, `azure/.gitignore`
+- [X] T004 [P] Document prerequisites in `specs/001-azure-deployment-test/quickstart.md`
 
 ---
 
@@ -31,11 +31,11 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T005 Verify Docker buildx available and QEMU configured for multi-arch
-- [ ] T006 Verify Azure CLI authenticated and subscription accessible
-- [ ] T007 Verify Azure Container Registry access: `az acr login --name protogatedevacr`
-- [ ] T008 Create shared utilities in `scripts/common.sh`: logging, error handling, JSON output
-- [ ] T009 Create script argument parser in `scripts/common.sh`: --env, --dry-run, --json, --verbose
+- [X] T005 Verify Docker buildx available and QEMU configured for multi-arch
+- [X] T006 Verify Azure CLI authenticated and subscription accessible
+- [X] T007 Verify Azure Container Registry access: `az acr login --name protogatedevacr`
+- [X] T008 Create shared utilities in `scripts/common.sh`: logging, error handling, JSON output
+- [X] T009 Create script argument parser in `scripts/common.sh`: --env, --dry-run, --json, --verbose
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -54,16 +54,16 @@ az acr repository show-tags -n protogatedevacr --repository protogate-server
 
 ### Implementation for User Story 2
 
-- [ ] T010 [P] [US2] Create buildx builder setup function in `scripts/build-and-push.sh` (lines 1-50)
-- [ ] T011 [P] [US2] Add Docker prerequisite validation in `scripts/build-and-push.sh` (lines 51-100)
-- [ ] T012 [US2] Implement multi-arch build logic in `scripts/build-and-push.sh` (lines 101-180)
-- [ ] T013 [US2] Add ACR push and manifest list creation in `scripts/build-and-push.sh` (lines 181-220)
-- [ ] T014 [US2] Add image verification and size reporting in `scripts/build-and-push.sh` (lines 221-270)
-- [ ] T015 [US2] Add dry-run mode and JSON output support in `scripts/build-and-push.sh` (lines 271-300)
-- [ ] T016 [US2] Verify Dockerfile.alpine multi-stage build optimization in `docker/Dockerfile.alpine`
-- [ ] T017 [US2] Test script: Build AMD64 image locally and verify size <100MB
-- [ ] T018 [US2] Test script: Build ARM64 image locally and verify size <100MB
-- [ ] T019 [US2] Test script: Push to ACR and verify manifest list created
+- [X] T010 [P] [US2] Create buildx builder setup function in `scripts/build-and-push.sh` (lines 1-50)
+- [X] T011 [P] [US2] Add Docker prerequisite validation in `scripts/build-and-push.sh` (lines 51-100)
+- [X] T012 [US2] Implement multi-arch build logic in `scripts/build-and-push.sh` (lines 101-180)
+- [X] T013 [US2] Add ACR push and manifest list creation in `scripts/build-and-push.sh` (lines 181-220)
+- [X] T014 [US2] Add image verification and size reporting in `scripts/build-and-push.sh` (lines 221-270)
+- [X] T015 [US2] Add dry-run mode and JSON output support in `scripts/build-and-push.sh` (lines 271-300)
+- [X] T016 [US2] Verify Dockerfile.alpine multi-stage build optimization in `docker/Dockerfile.alpine`
+- [X] T017 [US2] Test script: Build AMD64 image locally and verify size <100MB
+- [X] T018 [US2] Test script: Build ARM64 image locally and verify size <100MB
+- [X] T019 [US2] Test script: Push to ACR and verify manifest list created
 
 **Checkpoint**: Docker images buildable and pushable to ACR - can deploy to Azure
 
@@ -82,16 +82,16 @@ az keyvault secret show --vault-name protogate-test-kv-* --name tls-cert
 
 ### Implementation for User Story 4
 
-- [ ] T020 [P] [US4] Create certificate generation script in `scripts/generate-test-cert.sh` (complete file ~50 lines)
-- [ ] T021 [P] [US4] Create resource group provisioning in `scripts/provision-keyvault.sh` (lines 1-50)
-- [ ] T022 [US4] Add unique Key Vault name generation in `scripts/provision-keyvault.sh` (lines 51-80)
-- [ ] T023 [US4] Implement Key Vault creation in `scripts/provision-keyvault.sh` (lines 81-120)
-- [ ] T024 [US4] Add certificate upload logic in `scripts/provision-keyvault.sh` (lines 121-160)
-- [ ] T025 [US4] Add access policy configuration placeholder in `scripts/provision-keyvault.sh` (lines 161-200)
-- [ ] T026 [US4] Add Key Vault URI output to file in `scripts/provision-keyvault.sh` (lines 201-220)
-- [ ] T027 [US4] Test script: Generate self-signed cert and verify 365-day expiry
-- [ ] T028 [US4] Test script: Provision Key Vault and verify secrets stored
-- [ ] T029 [US4] Test script: Retrieve secret from Key Vault and validate content
+- [X] T020 [P] [US4] Create certificate generation script in `scripts/generate-test-cert.sh` (complete file ~50 lines)
+- [X] T021 [P] [US4] Create resource group provisioning in `scripts/provision-keyvault.sh` (lines 1-50)
+- [X] T022 [US4] Add unique Key Vault name generation in `scripts/provision-keyvault.sh` (lines 51-80)
+- [X] T023 [US4] Implement Key Vault creation in `scripts/provision-keyvault.sh` (lines 81-120)
+- [X] T024 [US4] Add certificate upload logic in `scripts/provision-keyvault.sh` (lines 121-160)
+- [X] T025 [US4] Add access policy configuration placeholder in `scripts/provision-keyvault.sh` (lines 161-200)
+- [X] T026 [US4] Add Key Vault URI output to file in `scripts/provision-keyvault.sh` (lines 201-220)
+- [X] T027 [US4] Test script: Generate self-signed cert and verify 365-day expiry
+- [X] T028 [US4] Test script: Provision Key Vault and verify secrets stored
+- [X] T029 [US4] Test script: Retrieve secret from Key Vault and validate content
 
 **Checkpoint**: Key Vault functional with test certificates - ready for container app integration
 
@@ -110,17 +110,17 @@ curl https://$(cat .server-url)/health
 
 ### Implementation for User Story 1
 
-- [ ] T030 [P] [US1] Create Container Apps environment provisioning in `scripts/deploy-test-env.sh` (lines 1-80)
-- [ ] T031 [P] [US1] Add Key Vault URI validation and loading in `scripts/deploy-test-env.sh` (lines 81-110)
-- [ ] T032 [US1] Implement server container app deployment in `scripts/deploy-test-env.sh` (lines 111-180)
-- [ ] T033 [US1] Add managed identity assignment in `scripts/deploy-test-env.sh` (lines 181-200)
-- [ ] T034 [US1] Configure health probe on port 8080 in `scripts/deploy-test-env.sh` (lines 201-230)
-- [ ] T035 [US1] Add Key Vault access policy grant in `scripts/deploy-test-env.sh` (lines 231-260)
-- [ ] T036 [US1] Implement health check polling logic in `scripts/deploy-test-env.sh` (lines 261-300)
-- [ ] T037 [US1] Add server URL output and next steps in `scripts/deploy-test-env.sh` (lines 301-340)
-- [ ] T038 [US1] Test deployment: Full test environment provisioning end-to-end
-- [ ] T039 [US1] Test deployment: Verify health endpoint accessible and returns 200
-- [ ] T040 [US1] Test deployment: Verify managed identity has Key Vault access
+- [X] T030 [P] [US1] Create Container Apps environment provisioning in `scripts/deploy-test-env.sh` (lines 1-80)
+- [X] T031 [P] [US1] Add Key Vault URI validation and loading in `scripts/deploy-test-env.sh` (lines 81-110)
+- [X] T032 [US1] Implement server container app deployment in `scripts/deploy-test-env.sh` (lines 111-180)
+- [X] T033 [US1] Add managed identity assignment in `scripts/deploy-test-env.sh` (lines 181-200)
+- [X] T034 [US1] Configure health probe on port 8080 in `scripts/deploy-test-env.sh` (lines 201-230)
+- [X] T035 [US1] Add Key Vault access policy grant in `scripts/deploy-test-env.sh` (lines 231-260)
+- [X] T036 [US1] Implement health check polling logic in `scripts/deploy-test-env.sh` (lines 261-300)
+- [X] T037 [US1] Add server URL output and next steps in `scripts/deploy-test-env.sh` (lines 301-340)
+- [X] T038 [US1] Test deployment: Full test environment provisioning end-to-end
+- [X] T039 [US1] Test deployment: Verify health endpoint accessible and returns 200
+- [X] T040 [US1] Test deployment: Verify managed identity has Key Vault access
 
 **Checkpoint**: Test environment deployed and server healthy - ready for e2e testing
 
@@ -138,22 +138,22 @@ curl https://$(cat .server-url)/health
 
 ### Implementation for User Story 3
 
-- [ ] T041 [P] [US3] Create test service HTTP echo server in `test/e2e/test-service.py` (complete file ~100 lines)
-- [ ] T042 [P] [US3] Create test helper utilities in `test/e2e/helpers.sh` (logging, assertions, cleanup)
-- [ ] T043 [P] [US3] Initialize test framework in `scripts/e2e-test.sh` (lines 1-60, setup, config)
-- [ ] T044 [US3] Implement tunnel creation test in `scripts/e2e-test.sh` (lines 61-100, Test 1)
-- [ ] T045 [US3] Implement test service startup in `scripts/e2e-test.sh` (lines 101-130, Test 2)
-- [ ] T046 [US3] Implement agent startup and connection test in `scripts/e2e-test.sh` (lines 131-180, Test 3)
-- [ ] T047 [US3] Implement proxied request test in `scripts/e2e-test.sh` (lines 181-220, Test 4)
-- [ ] T048 [US3] Implement invalid token rejection test in `scripts/e2e-test.sh` (lines 221-260, Test 5)
-- [ ] T049 [US3] Implement agent disconnect 503 test in `scripts/e2e-test.sh` (lines 261-290, Test 6)
-- [ ] T050 [US3] Implement cleanup test in `scripts/e2e-test.sh` (lines 291-320, Test 7)
-- [ ] T051 [US3] Add test results aggregation in `scripts/e2e-test.sh` (lines 321-370, success/fail recording)
-- [ ] T052 [US3] Add JSON output formatting in `scripts/e2e-test.sh` (lines 371-420)
-- [ ] T053 [US3] Add verbose logging mode in `scripts/e2e-test.sh` (lines 421-450)
-- [ ] T054 [US3] Test e2e: Run full test suite and verify all 7 scenarios pass
-- [ ] T055 [US3] Test e2e: Verify test execution completes in <2 minutes
-- [ ] T056 [US3] Test e2e: Verify cleanup removes all resources
+- [X] T041 [P] [US3] Create test service HTTP echo server in `test/e2e/test-service.py` (complete file ~100 lines)
+- [X] T042 [P] [US3] Create test helper utilities in `test/e2e/helpers.sh` (logging, assertions, cleanup)
+- [X] T043 [P] [US3] Initialize test framework in `scripts/e2e-test.sh` (lines 1-60, setup, config)
+- [X] T044 [US3] Implement tunnel creation test in `scripts/e2e-test.sh` (lines 61-100, Test 1)
+- [X] T045 [US3] Implement test service startup in `scripts/e2e-test.sh` (lines 101-130, Test 2)
+- [X] T046 [US3] Implement agent startup and connection test in `scripts/e2e-test.sh` (lines 131-180, Test 3)
+- [X] T047 [US3] Implement proxied request test in `scripts/e2e-test.sh` (lines 181-220, Test 4)
+- [X] T048 [US3] Implement invalid token rejection test in `scripts/e2e-test.sh` (lines 221-260, Test 5)
+- [X] T049 [US3] Implement agent disconnect 503 test in `scripts/e2e-test.sh` (lines 261-290, Test 6)
+- [X] T050 [US3] Implement cleanup test in `scripts/e2e-test.sh` (lines 291-320, Test 7)
+- [X] T051 [US3] Add test results aggregation in `scripts/e2e-test.sh` (lines 321-370, success/fail recording)
+- [X] T052 [US3] Add JSON output formatting in `scripts/e2e-test.sh` (lines 371-420)
+- [X] T053 [US3] Add verbose logging mode in `scripts/e2e-test.sh` (lines 421-450)
+- [X] T054 [US3] Test e2e: Run full test suite and verify all 7 scenarios pass
+- [X] T055 [US3] Test e2e: Verify test execution completes in <2 minutes
+- [X] T056 [US3] Test e2e: Verify cleanup removes all resources
 
 **Checkpoint**: E2E tests fully automated and passing - deployment validated
 
@@ -172,15 +172,15 @@ dig @8.8.8.8 test-api.test.tunnel.example.com
 
 ### Implementation for User Story 5
 
-- [ ] T057 [P] [US5] Create DNS zone provisioning in `scripts/configure-dns.sh` (lines 1-80)
-- [ ] T058 [P] [US5] Add wildcard A/CNAME record creation in `scripts/configure-dns.sh` (lines 81-130)
-- [ ] T059 [US5] Add root A record for Management API in `scripts/configure-dns.sh` (lines 131-160)
-- [ ] T060 [US5] Implement DNS resolution validation in `scripts/configure-dns.sh` (lines 161-200)
-- [ ] T061 [US5] Add custom domain configuration on container app in `scripts/configure-dns.sh` (lines 201-250)
-- [ ] T062 [US5] Add TLS certificate binding for custom domain in `scripts/configure-dns.sh` (lines 251-300)
-- [ ] T063 [US5] Test DNS: Create DNS zone and verify propagation within 5 minutes
-- [ ] T064 [US5] Test DNS: Verify wildcard record resolves correctly
-- [ ] T065 [US5] Test DNS: Verify HTTPS request to custom domain succeeds
+- [X] T057 [P] [US5] Create DNS subdomain setup under ormasoft.cl in `scripts/configure-dns.sh` (lines 1-80, includes Let's Encrypt ACME DNS challenge setup)
+- [X] T058 [P] [US5] Add wildcard A/CNAME record creation in `scripts/configure-dns.sh` (lines 81-130)
+- [X] T059 [US5] Add root A record for Management API in `scripts/configure-dns.sh` (lines 131-160)
+- [X] T060 [US5] Implement DNS resolution validation in `scripts/configure-dns.sh` (lines 161-200)
+- [X] T061 [US5] Add custom domain configuration on container app in `scripts/configure-dns.sh` (lines 201-250)
+- [X] T062 [US5] Add Let's Encrypt certificate provisioning and binding in `scripts/configure-dns.sh` (lines 251-300, ACME protocol with DNS-01 challenge)
+- [X] T063 [US5] Test DNS: Create DNS zone and verify propagation within 5 minutes
+- [X] T064 [US5] Test DNS: Verify wildcard record resolves correctly
+- [X] T065 [US5] Test DNS: Verify HTTPS request to custom domain succeeds
 
 **Checkpoint**: DNS operational with custom domains - production-ready routing
 
