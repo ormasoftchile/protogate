@@ -177,7 +177,7 @@ int main(int argc, char* argv[]) {
         
         auto health_server = std::make_shared<server::HealthServer>(
             io_pool,
-            8080);  // HTTP-only health endpoint
+            9090);  // HTTP-only health endpoint on separate port
         
         auto agent_server = std::make_shared<server::AgentServer>(
             io_pool,
