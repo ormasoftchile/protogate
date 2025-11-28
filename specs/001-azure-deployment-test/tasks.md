@@ -69,7 +69,7 @@ az acr repository show-tags -n protogatedevacr --repository protogate-server
 
 ---
 
-## Phase 4: User Story 4 - TLS Certificate Management (Priority: P1)
+## Phase 4: User Story 4 - TLS Certificate Management (Priority: P0)
 
 **Goal**: Azure Key Vault provisioned with TLS certificates for secure connections
 

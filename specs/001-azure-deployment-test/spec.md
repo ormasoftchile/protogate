@@ -35,7 +35,7 @@
 **Actor**: DevOps engineer  
 **Context**: Need isolated Azure environment to validate protogate before production
 
-**Scenario**: Engineer runs deployment script that provisions Azure Container Apps for server and agent, configures DNS, sets up Key Vault for TLS certificates, and validates connectivity. All resources use `-test` suffix and isolated from production.
+**Scenario**: Engineer runs deployment script that provisions Azure Container Apps for server (agent runs locally via Docker for testing), configures DNS, sets up Key Vault for TLS certificates, and validates connectivity. All resources use `-test` suffix and isolated from production. Note: Agent is NOT deployed to Azure in test environment - it runs locally in Docker during e2e tests to validate the deployed server.
 
 **Why this priority**: Cannot validate deployment without test environment. Critical path for production readiness.
 
@@ -221,6 +221,7 @@ az monitor app-insights query \
   - CPU: 0.5 cores, Memory: 1Gi
   - Ingress: External, HTTPS, port 443
   - Additional ports: 8080 (health), 8443 (agent WebSocket)
+  - Health probe: HTTP GET /health on port 8080 every 30 seconds, failure threshold: 3 consecutive failures
   - Environment variables:
     - `KEY_VAULT_URI`: Azure Key Vault URL
     - `DNS_ZONE`: `tunnel.example.com`
@@ -350,6 +351,8 @@ docker buildx build \
 **Security**:
 - TLS 1.2+ for all external connections
 - Managed identities for Azure resource access (no secrets in env vars)
+- Server MUST load TLS certificates from Key Vault on startup using managed identity via Azure SDK
+- MUST NOT log sensitive data (tokens, keys, certificate content) in application logs
 - Network isolation: Private VNet for prod (test can use default)
 - Secrets in Key Vault, not source control
 

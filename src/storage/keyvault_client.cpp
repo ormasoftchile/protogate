@@ -114,41 +114,44 @@ std::optional<KeyVaultClient::CertificateData> KeyVaultClient::get_certificate(
         });
         
         // TODO: Implement Azure SDK call
-        // Azure::Security::KeyVault::Certificates::CertificateClient client(vault_uri_, credential_);
-        // auto response = client.GetCertificate(cert_name);
-        // 
-        // Detect format and parse accordingly:
-        // - If binary data (PFX/PKCS#12): return parse_pfx(response.Value.Cer);
-        // - If text data (PEM): return parse_pem(response.Value.Cer);
-        //
-        // For secret-based storage (cert+key as secret):
         // Azure::Security::KeyVault::Secrets::SecretClient secret_client(vault_uri_, credential_);
-        // auto secret_response = secret_client.GetSecret(cert_name);
-        // return parse_pem(secret_response.Value.Value);
+        // auto cert_response = secret_client.GetSecret(cert_name, version);
+        // auto key_response = secret_client.GetSecret(cert_name + "-key", version);
+        //
+        // CertificateData result;
+        // result.cert_pem = cert_response.Value.Value;
+        // result.key_pem = key_response.Value.Value;
+        // result.version = cert_response.Value.Properties.Version;
+        // return result;
         
-        // Stub: Return dummy certificate for development
-        // Simulate PEM format (most common for Azure Key Vault secrets)
-        std::string dummy_pem = 
-            "-----BEGIN CERTIFICATE-----\n"
-            "MIIDazCCAlOgAwIBAgIUXxQvvQZ1234567890abcdefghijklmnoEwDQYJKoZIhvcNAQEL\n"
-            "BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExITAfBgNVBAoMGElu\n"
-            "dGVybmV0IFdpZGdpdHMgUHR5IEx0ZDAeFw0yNTAxMDEwMDAwMDBaFw0yNjAxMDEwMDAw\n"
-            "MDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMSEwHwYDVQQKDBhJ\n"
-            "bnRlcm5ldCBXaWRnaXRzIFB0eSBMdGQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK\n"
-            "AoIBAQDummy_cert_data_here_not_real_certificate_1234567890abcdefghij\n"
-            "-----END CERTIFICATE-----\n"
-            "-----BEGIN PRIVATE KEY-----\n"
-            "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDdummy_key_data\n"
-            "here_not_real_private_key_1234567890abcdefghijklmnopqrstuvwxyz0123456789\n"
-            "-----END PRIVATE KEY-----\n";
+        // Note: This implementation expects two separate secrets:
+        // - "tls-cert" for the certificate
+        // - "tls-key" for the private key
+        // This matches the provision-keyvault.sh script behavior
         
-        auto result = parse_pem(dummy_pem);
-        if (!result) {
-            observability::Logger::instance().error("Failed to parse dummy certificate PEM");
+        // For stub/development mode, get separate secrets
+        auto cert_secret = get_secret(cert_name, version);
+        auto key_secret = get_secret("tls-key", version);
+        
+        if (!cert_secret || !key_secret) {
+            observability::Logger::instance().error("Failed to retrieve certificate or key from Key Vault", {
+                {"cert_name", cert_name},
+                {"has_cert", cert_secret.has_value() ? "true" : "false"},
+                {"has_key", key_secret.has_value() ? "true" : "false"}
+            });
             return std::nullopt;
         }
         
-        observability::Logger::instance().warning("KeyVault stub: returning dummy certificate");
+        CertificateData result;
+        result.cert_pem = *cert_secret;
+        result.key_pem = *key_secret;
+        result.version = version.empty() ? "latest" : version;
+        
+        observability::Logger::instance().info("Certificate retrieved from Key Vault", {
+            {"cert_name", cert_name},
+            {"version", result.version}
+        });
+        
         return result;
         
     } catch (const std::exception& e) {

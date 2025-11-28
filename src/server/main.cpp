@@ -75,6 +75,20 @@ int main(int argc, char* argv[]) {
             {"key_vault_uri", config.key_vault_uri}
         });
         
+        // Load TLS certificate from Key Vault (skip for mock/local development)
+        if (config.key_vault_uri.find("mock") == std::string::npos) {
+            LOG_INFO("Loading TLS certificate from Key Vault", {
+                {"secret_name", "tls-cert"},
+                {"domain", config.dns_zone}
+            });
+            
+            if (!tls_manager->load_certificate("tls-cert", config.dns_zone)) {
+                LOG_WARNING("Failed to load TLS certificate from Key Vault, will use local certificates if available");
+            } else {
+                LOG_INFO("TLS certificate loaded successfully from Key Vault");
+            }
+        }
+        
         // Initialize token validator
         auto token_validator = std::make_shared<security::TokenValidator>(token_cache);
         
