@@ -12,6 +12,34 @@ A high-performance, self-hosted reverse tunneling server built in C++ for exposi
 - 🛡️ **Security Controls**: IP allowlisting (CIDR), rate limiting, audit logging
 - 💰 **Cost-Effective**: Deploy for <$15/month with Azure Container Apps
 
+## Repository Structure
+
+⚠️ **Important**: This repository contains **TWO separate C++ codebases**:
+
+### 1. Protogate Server (Root Directory)
+```
+protogate/
+├── src/              # Server source code
+├── build/            # Server binary (protogate-server)
+├── docker/           # Container configurations
+├── specs/            # Feature specifications
+└── .specify/         # Project automation scripts
+```
+
+### 2. Tunnel Agent (Subdirectory)
+```
+tunnel-agent/         # ⚠️ Complete standalone project, NOT just src/
+├── src/              # Agent source code
+├── build/            # Agent binary (tunnel-agent)
+├── tests/            # Agent test suite
+├── scripts/          # Agent-specific scripts
+├── *.md              # Comprehensive documentation
+├── *.json            # Configuration files
+└── *.sh              # Test and registration scripts
+```
+
+**Key Point**: When working with the tunnel agent, always consider the **entire `tunnel-agent/` directory**, not just `tunnel-agent/src/`. It contains critical documentation, tests, scripts, and configuration files.
+
 ## Quick Start
 
 ### Prerequisites

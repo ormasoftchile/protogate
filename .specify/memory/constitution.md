@@ -13,6 +13,24 @@ Sync Impact Report:
 
 # Protogate Constitution
 
+## Project Structure (CRITICAL FOR AI ASSISTANTS)
+
+⚠️ **IMPORTANT**: This repository contains **TWO separate C++ codebases**:
+
+1. **Protogate Server** (root directory): `src/`, `build/`, `docker/`, `specs/`
+2. **Tunnel Agent** (complete subdirectory): `tunnel-agent/` contains NOT just `src/` but:
+   - `src/` - Agent source code
+   - `build/` - Agent binary (`tunnel-agent`)
+   - `tests/` - Agent test suite
+   - `scripts/` - Agent-specific scripts
+   - `*.md` - Critical documentation (README.md, IMPLEMENTATION_COMPLETE.md, TESTING.md, etc.)
+   - `*.json` - Configuration files (vcpkg.json, config.json)
+   - `*.sh` - Test and registration scripts
+
+**When analyzing or working with tunnel-agent**: ALWAYS consider the ENTIRE `tunnel-agent/` directory, not just `tunnel-agent/src/`. Use `list_dir` to see full structure. Check documentation files for implementation status and testing procedures.
+
+---
+
 ## Core Principles
 
 ### I. Security-First (NON-NEGOTIABLE)
