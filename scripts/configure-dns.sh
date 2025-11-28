@@ -519,6 +519,64 @@ upload_cert_to_keyvault() {
     return 0
 }
 
+# Function: Convert PEM to PFX for Container Apps
+convert_pem_to_pfx() {
+    local cert_path="$1"
+    local key_path="$2"
+    local pfx_path="$3"
+    local password="$4"
+    
+    log_info "Converting PEM to PFX format"
+    
+    if openssl pkcs12 -export \
+        -out "$pfx_path" \
+        -inkey "$key_path" \
+        -in "$cert_path" \
+        -password "pass:$password" 2>/dev/null; then
+        log_success "PFX created: $pfx_path"
+        return 0
+    else
+        log_error "Failed to convert to PFX"
+        return 1
+    fi
+}
+
+# Function: Upload certificate to Container App Environment
+upload_cert_to_container_env() {
+    local pfx_path="$1"
+    local password="$2"
+    local cert_name="$3"
+    
+    log_info "Uploading certificate to Container Apps environment"
+    
+    # Get Container Apps environment name
+    local env_name="protogate-${ENVIRONMENT}-env"
+    
+    # Check if certificate already exists
+    if az containerapp env certificate list \
+        --name "$env_name" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query "[?name=='$cert_name'].name" \
+        -o tsv 2>/dev/null | grep -q "$cert_name"; then
+        log_info "Certificate already exists in environment, skipping upload"
+        return 0
+    fi
+    
+    if az containerapp env certificate upload \
+        --name "$env_name" \
+        --resource-group "$RESOURCE_GROUP" \
+        --certificate-file "$pfx_path" \
+        --certificate-name "$cert_name" \
+        --password "$password" \
+        --output none 2>&1; then
+        log_success "Certificate uploaded to environment"
+        return 0
+    else
+        log_error "Certificate upload to environment failed"
+        return 1
+    fi
+}
+
 # Function: Bind custom domain to Container App
 bind_custom_domain() {
     local domain="$1"
@@ -530,16 +588,102 @@ bind_custom_domain() {
         return 0
     fi
     
-    # Note: This is a simplified version. Full implementation would:
-    # 1. Add custom domain to Container App
-    # 2. Bind certificate from Key Vault
-    # 3. Configure TLS settings
+    # Step 1: Get validation ID from Container App
+    log_info "Getting custom domain verification ID"
+    local verification_id=$(az containerapp show \
+        --name "$CONTAINER_APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --query "properties.customDomainVerificationId" \
+        -o tsv 2>/dev/null)
     
-    log_warn "Custom domain binding requires Container Apps managed certificate or certificate from Key Vault"
-    log_warn "This feature will be implemented when Container Apps supports Key Vault certificate binding"
-    log_info "Current workaround: DNS points to Container Apps default domain"
+    if [ -z "$verification_id" ]; then
+        log_error "Failed to get custom domain verification ID"
+        return 1
+    fi
     
-    return 0
+    log_info "Verification ID: $verification_id"
+    
+    # Step 2: Create TXT validation record
+    log_info "Creating TXT validation record: asuid.${domain}"
+    local txt_record_name="asuid.${DNS_PREFIX}"
+    
+    if az network dns record-set txt add-record \
+        --resource-group "$DNS_ZONE_RESOURCE_GROUP" \
+        --zone-name "$BASE_ZONE" \
+        --record-set-name "$txt_record_name" \
+        --value "$verification_id" \
+        --output none 2>/dev/null; then
+        log_success "TXT validation record created"
+    else
+        log_warn "TXT validation record creation failed or already exists"
+    fi
+    
+    # Wait for DNS propagation
+    log_info "Waiting 30 seconds for TXT record propagation..."
+    sleep 30
+    
+    # Step 3: Add hostname (without binding)
+    log_info "Adding hostname to Container App"
+    if ! az containerapp hostname add \
+        --hostname "$domain" \
+        --name "$CONTAINER_APP_NAME" \
+        --resource-group "$RESOURCE_GROUP" \
+        --output none 2>/dev/null; then
+        log_warn "Hostname add failed or already exists"
+    fi
+    
+    # Step 4: Check if certificate exists in Key Vault
+    if [ -n "${CERT_PATH:-}" ] && [ -n "${KEY_PATH:-}" ]; then
+        # Convert to PFX
+        local cert_dir="$PROJECT_ROOT/azure/letsencrypt"
+        local pfx_path="$cert_dir/certificate.pfx"
+        local pfx_password=$(openssl rand -base64 32)
+        local cert_name="tls-cert-${ENVIRONMENT}"
+        
+        if convert_pem_to_pfx "$CERT_PATH" "$KEY_PATH" "$pfx_path" "$pfx_password"; then
+            # Upload to Container Apps environment
+            if upload_cert_to_container_env "$pfx_path" "$pfx_password" "$cert_name"; then
+                # Step 5: Bind hostname with certificate
+                log_info "Binding hostname with certificate"
+                if az containerapp hostname bind \
+                    --hostname "$domain" \
+                    --name "$CONTAINER_APP_NAME" \
+                    --resource-group "$RESOURCE_GROUP" \
+                    --certificate "$cert_name" \
+                    --environment "protogate-${ENVIRONMENT}-env" \
+                    --output none 2>&1; then
+                    log_success "Custom domain bound with certificate"
+                    rm -f "$pfx_path"  # Clean up PFX file
+                    return 0
+                else
+                    log_error "Failed to bind hostname with certificate"
+                    rm -f "$pfx_path"
+                    return 1
+                fi
+            else
+                log_error "Certificate upload failed, cannot bind hostname"
+                rm -f "$pfx_path"
+                return 1
+            fi
+        fi
+    else
+        log_warn "No certificate available for binding"
+        log_info "Using Container Apps managed certificate instead"
+        
+        # Let Container Apps create a managed certificate
+        if az containerapp hostname bind \
+            --hostname "$domain" \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --environment "protogate-${ENVIRONMENT}-env" \
+            --output none 2>&1; then
+            log_success "Custom domain bound with managed certificate"
+            return 0
+        else
+            log_error "Failed to bind hostname"
+            return 1
+        fi
+    fi
 }
 
 # Function: Validate HTTPS access
