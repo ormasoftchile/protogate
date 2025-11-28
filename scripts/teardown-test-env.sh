@@ -24,25 +24,28 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 # Default values
-ENVIRONMENT="test"
+ENVIRONMENT=""
 KEEP_RESOURCE_GROUP=false
 KEEP_DNS=false
 DRY_RUN=false
 VERBOSE=false
 
-# Azure resource names
-RESOURCE_GROUP="protogate-test-rg"
-CONTAINER_APP_NAME="protogate-test-server"
-CONTAINER_ENV_NAME="protogate-test-env"
-KEYVAULT_NAME="pg-test-kv-098f6b"
-DNS_ZONE="ormasoft.cl"
-DNS_PREFIX="test.tunnel"
+# Azure resource names (will be set based on environment)
+RESOURCE_GROUP=""
+CONTAINER_APP_NAME=""
+CONTAINER_ENV_NAME=""
+KEYVAULT_NAME=""
+DNS_ZONE=""
+DNS_PREFIX=""
 
 usage() {
     cat << EOF
-Usage: $0 [OPTIONS]
+Usage: $0 --env ENV [OPTIONS]
 
-Teardown Azure test environment resources.
+Teardown Azure environment resources.
+
+Required Arguments:
+    --env ENV           Environment name (dev/test/prod)
 
 Options:
     --keep-rg           Keep the resource group (only delete individual resources)
@@ -52,20 +55,20 @@ Options:
     --help, -h          Show this help message
 
 Examples:
-    # Delete everything (including resource group)
-    $0
+    # Delete dev environment
+    $0 --env dev
+
+    # Delete test environment (dry run)
+    $0 --env test --dry-run
 
     # Delete resources but keep resource group
-    $0 --keep-rg
+    $0 --env test --keep-rg
 
     # Keep DNS records (useful if shared with other services)
-    $0 --keep-dns
-
-    # Dry run to see what would be deleted
-    $0 --dry-run
+    $0 --env test --keep-dns
 
 Warning:
-    This is a destructive operation. All data in the test environment will be lost.
+    This is a destructive operation. All data in the environment will be lost.
     - Container Apps and logs will be deleted
     - Key Vault and all secrets/certificates will be deleted (soft-delete may retain for 90 days)
     - DNS records will be removed (if not --keep-dns)
@@ -77,6 +80,10 @@ EOF
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --env)
+            ENVIRONMENT="$2"
+            shift 2
+            ;;
         --keep-rg)
             KEEP_RESOURCE_GROUP=true
             shift
@@ -102,6 +109,44 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Validate environment
+if [ -z "$ENVIRONMENT" ]; then
+    log_error "Environment is required. Use --env dev|test|prod"
+    usage
+fi
+
+# Set resource names based on environment
+case "$ENVIRONMENT" in
+    dev)
+        RESOURCE_GROUP="protogate-dev-rg"
+        CONTAINER_APP_NAME="protogate-dev-app"
+        CONTAINER_ENV_NAME="protogate-dev-env"
+        KEYVAULT_NAME="protogatedevkv"
+        DNS_ZONE="tunnel-dev.example.com"
+        DNS_PREFIX=""  # Root zone
+        ;;
+    test)
+        RESOURCE_GROUP="protogate-test-rg"
+        CONTAINER_APP_NAME="protogate-test-server"
+        CONTAINER_ENV_NAME="protogate-test-env"
+        KEYVAULT_NAME="pg-test-kv-098f6b"
+        DNS_ZONE="ormasoft.cl"
+        DNS_PREFIX="test.tunnel"
+        ;;
+    prod)
+        RESOURCE_GROUP="protogate-prod-rg"
+        CONTAINER_APP_NAME="protogate-prod-server"
+        CONTAINER_ENV_NAME="protogate-prod-env"
+        KEYVAULT_NAME="pg-prod-kv-098f6b"
+        DNS_ZONE="ormasoft.cl"
+        DNS_PREFIX="tunnel"
+        ;;
+    *)
+        log_error "Invalid environment: $ENVIRONMENT (must be dev, test, or prod)"
+        exit 1
+        ;;
+esac
 
 if [ "$VERBOSE" = true ]; then
     set -x
@@ -159,7 +204,30 @@ delete_dns_records() {
         return 0
     fi
     
-    # Get DNS zone resource group
+    # For dev environment, delete the entire DNS zone
+    if [ "$ENVIRONMENT" = "dev" ]; then
+        if az network dns zone show \
+            --name "$DNS_ZONE" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output none 2>/dev/null; then
+            
+            log_info "Deleting DNS zone: $DNS_ZONE"
+            if az network dns zone delete \
+                --name "$DNS_ZONE" \
+                --resource-group "$RESOURCE_GROUP" \
+                --yes \
+                --output none 2>/dev/null; then
+                log_success "Deleted DNS zone: $DNS_ZONE"
+            else
+                log_warn "Failed to delete DNS zone: $DNS_ZONE"
+            fi
+        else
+            log_info "DNS zone not found (already deleted)"
+        fi
+        return 0
+    fi
+    
+    # For test/prod: delete specific records from shared zone
     local dns_rg=$(az network dns zone list --query "[?name=='$DNS_ZONE'].resourceGroup" -o tsv | head -n 1)
     
     if [ -z "$dns_rg" ]; then
@@ -337,11 +405,15 @@ cleanup_local_files() {
     log_info "Step 6: Cleaning up local files"
     
     local files=(
-        "$PROJECT_ROOT/azure/.keyvault-uri-test"
-        "$PROJECT_ROOT/azure/.managed-identity-test"
-        "$PROJECT_ROOT/azure/.container-app-url-test"
-        "$PROJECT_ROOT/azure/letsencrypt"
+        "$PROJECT_ROOT/azure/.keyvault-uri-${ENVIRONMENT}"
+        "$PROJECT_ROOT/azure/.managed-identity-${ENVIRONMENT}"
+        "$PROJECT_ROOT/azure/.container-app-url-${ENVIRONMENT}"
     )
+    
+    # Only clean up Let's Encrypt files for test/prod (not dev)
+    if [ "$ENVIRONMENT" != "dev" ]; then
+        files+=("$PROJECT_ROOT/azure/letsencrypt")
+    fi
     
     for file in "${files[@]}"; do
         if [ -e "$file" ]; then
@@ -360,7 +432,7 @@ cleanup_local_files() {
 # Main execution
 main() {
     log_info "================================================"
-    log_info "Protogate Test Environment Teardown"
+    log_info "Protogate Environment Teardown"
     log_info "================================================"
     log_info "Environment: $ENVIRONMENT"
     log_info "Resource Group: $RESOURCE_GROUP"
@@ -399,7 +471,11 @@ main() {
     log_info "  ✓ Key Vault: $KEYVAULT_NAME (soft-deleted)"
     
     if [ "$KEEP_DNS" = false ]; then
-        log_info "  ✓ DNS Records: ${DNS_PREFIX}.${DNS_ZONE}"
+        if [ "$ENVIRONMENT" = "dev" ]; then
+            log_info "  ✓ DNS Zone: $DNS_ZONE"
+        else
+            log_info "  ✓ DNS Records: ${DNS_PREFIX}.${DNS_ZONE}"
+        fi
     fi
     
     if [ "$KEEP_RESOURCE_GROUP" = false ]; then
