@@ -269,11 +269,12 @@ check_health() {
 }
 
 main() {
-    parse_args "$@"
-    
-    if [ $# -eq 0 ]; then
+    # Check for help first
+    if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
         usage
     fi
+    
+    parse_args "$@"
     
     # Parse additional options
     while [[ $# -gt 0 ]]; do
@@ -291,6 +292,9 @@ main() {
                 ;;
             --dry-run|--json|--verbose|-v)
                 shift
+                ;;
+            --help|-h)
+                usage
                 ;;
             *)
                 log_error "Unknown option: $1"
