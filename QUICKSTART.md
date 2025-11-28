@@ -1,621 +1,556 @@
-# Protogate Quickstart Guide
+# Protogate - Quick Start Guide
 
-Your server is deployed and running in Azure! Here's how to use it.
+Complete guide to deploy and use Protogate tunneling service on Azure.
 
-## Current Deployment Status
+## Table of Contents
 
-✅ **Production URL**: https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io
+1. [Prerequisites](#prerequisites)
+2. [Deploy Test Environment](#deploy-test-environment)
+3. [Verify Deployment](#verify-deployment)
+4. [Create Your First Tunnel](#create-your-first-tunnel)
+5. [Run End-to-End Tests](#run-end-to-end-tests)
+6. [Teardown](#teardown)
+7. [Production Deployment](#production-deployment)
+8. [Troubleshooting](#troubleshooting)
 
-✅ **Health Endpoint**: Working (HTTP 200)
+---
 
-✅ **Infrastructure**: Azure Container Apps (East US)
+## Prerequisites
 
-✅ **Deployment**: Single-command automated via `./build-and-push-local.sh`
+### Required Tools
 
-## What You Have
-
-Protogate is a **reverse tunnel server** deployed in Azure with a fully implemented C++ agent. Current status:
-
-1. **Server Infrastructure** ✅ (Running in Azure Container Apps, East US)
-2. **Health Monitoring** ✅ (Health checks, metrics, error tracking)
-3. **TLS Configuration** ✅ (Azure handles TLS termination)
-4. **Auto-scaling** ✅ (1-3 replicas based on CPU usage)
-5. **Tunnel Agent** ✅ (Complete C++ implementation in `tunnel-agent/`)
-6. **Agent Protocol** ✅ (TLS + HTTP/2 + ALPN support)
-7. **HTTP Request Forwarding** ✅ (Agent forwards to local services)
-
-## What Still Needs Integration
-
-To enable end-to-end tunneling:
-
-1. **Management API** ⚠️ (Server needs POST/GET/DELETE `/v1/tunnels` endpoints)
-2. **HTTP Proxy** ⚠️ (Server needs to route by Host header to agents)
-3. **TCP Proxy** ⚠️ (Server needs TCP stream forwarding)
-4. **Agent Deployment** ❌ (Build agent Docker image, deploy alongside server)
-
-Think of the full architecture:
-```
-Internet Client → Azure Ingress (HTTPS) → Protogate Server → Tunnel Agent → Local Service
-                      ✅                         ⚠️               ✅              (your app)
-                                            (needs API)      (implemented)
-```
-
-## Testing Current Deployment
-
-### 1. Health Check (Working)
-```bash
-curl https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/health
-```
-
-**Expected Response**:
-```json
-{
-  "status": "healthy",
-  "version": "1.0.0",
-  "service": "protogate",
-  "timestamp": 1764243784596,
-  "metrics": {
-    "active_tunnels": 0,
-    "total_http_requests": 0,
-    "active_http_connections": 0,
-    "active_tcp_connections": 0
-  }
-}
-```
-
-### 2. Test Tunnel Agent Locally
-
-The tunnel agent is fully implemented and can be tested locally:
+Install these tools before proceeding:
 
 ```bash
-# Build the agent (if not already built)
-cd tunnel-agent
-cmake -B build -S . -DCMAKE_PREFIX_PATH=/opt/homebrew
-cmake --build build --parallel 8
+# Azure CLI (>= 2.50.0)
+brew install azure-cli
 
-# Create configuration
-cp config.example.json config.json
+# Docker with buildx (for multi-arch builds)
+# Download from: https://www.docker.com/products/docker-desktop
 
-# Edit config.json with your settings:
-# {
-#   "server_host": "protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io",
-#   "server_port": 8443,
-#   "tunnel_id": "my-test-tunnel",
-#   "tunnel_token": "tnl_your_token_here",
-#   "local_url": "http://localhost:3000"
-# }
+# Python 3 (for test service)
+brew install python3
 
-# Run the agent
-./build/tunnel-agent --config config.json
+# Verify installations
+az --version          # Should be >= 2.50.0
+docker --version      # Should be >= 24.0
+python3 --version     # Should be >= 3.8
 ```
 
-**What the agent does**:
-- Connects to server via TLS on port 8443
-- Authenticates with Bearer token
-- Maintains HTTP/2 session with heartbeats
-- Forwards incoming HTTP requests to local service
-- Returns responses back through tunnel
-- Auto-reconnects with exponential backoff
-
-**Current limitation**: Server needs Management API to register tunnels before agents can connect productively.
-
-### 2. Management API (Not Yet Implemented)
-
-These endpoints will be available once implementation is complete:
+### Azure Access
 
 ```bash
-# Create a Tunnel (Future)
-curl -X POST https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/v1/tunnels \
+# Login to Azure
+az login
+
+# Set your subscription (if you have multiple)
+az account list --output table
+az account set --subscription "YOUR_SUBSCRIPTION_NAME"
+
+# Verify access
+az account show
+```
+
+---
+
+## Deploy Test Environment
+
+### Step 1: Deploy Complete Environment
+
+This single command deploys everything: Resource Group, Container Registry, Key Vault, Log Analytics, Container Apps Environment, and Server.
+
+```bash
+./scripts/deploy-test-env.sh --env test
+```
+
+**What it does:**
+- Creates `protogate-test-rg` resource group
+- Creates `protogate-test-logs` Log Analytics workspace
+- Creates `protogate-test-kv` Key Vault (auto-generated)
+- Creates `protogatetest acr` Container Registry
+- Builds and pushes Docker image (multi-arch: AMD64 + ARM64)
+- Creates `protogate-test-env` Container Apps environment
+- Deploys `protogate-test-server` with managed identity
+- Grants Key Vault access to server
+- Configures health probes
+- Saves configuration to `azure/.server-url-test`
+
+**Expected output:**
+```
+[INFO] Using resource group: protogate-test-rg
+[SUCCESS] Resource group created: protogate-test-rg
+[SUCCESS] Log Analytics workspace created: protogate-test-logs
+[SUCCESS] Key Vault created: protogate-test-kv
+[SUCCESS] Container Registry created: protogatetest acr
+[SUCCESS] Image built and pushed: protogatetest acr.azurecr.io/protogate-server:latest
+[SUCCESS] Container Apps environment created: protogate-test-env
+[SUCCESS] Container app created: protogate-test-server
+[SUCCESS] Managed identity enabled
+[SUCCESS] Key Vault access granted
+[SUCCESS] Health probe configured
+[SUCCESS] Deployment completed!
+
+Server URL: https://protogate-test-server.whitesea-e4a76aae.westus2.azurecontainerapps.io
+```
+
+**Time:** ~10-15 minutes (first deployment)
+
+---
+
+## Verify Deployment
+
+### Check Server Health
+
+```bash
+# Load server URL from saved config
+SERVER_URL=$(cat azure/.server-url-test)
+
+# Health check
+curl $SERVER_URL/health
+
+# Expected output:
+# {"status":"healthy","version":"1.0.0"}
+```
+
+### View Deployment Details
+
+```bash
+# Container app details
+az containerapp show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --query "{Name:name, Status:properties.runningStatus, URL:properties.configuration.ingress.fqdn}" \
+  --output table
+
+# Key Vault details
+az keyvault show \
+  --name protogate-test-kv \
+  --resource-group protogate-test-rg \
+  --query "{Name:name, Location:location, URI:properties.vaultUri}" \
+  --output table
+
+# View container logs
+az containerapp logs show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --tail 50
+```
+
+---
+
+## Create Your First Tunnel
+
+### Via Management API
+
+```bash
+# Create tunnel
+curl -X POST $SERVER_URL/v1/tunnels \
   -H "Content-Type: application/json" \
   -d '{
-    "tunnel_id": "my-test-app",
+    "tunnel_id": "my-api",
     "protocol": "HTTP",
-    "target": "localhost:3000",
-    "dns_subdomain": "my-test-app"
+    "target_host": "localhost",
+    "target_port": 3000
   }'
 
-# List All Tunnels (Future)
-curl https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/v1/tunnels
-
-# Get Specific Tunnel (Future)
-curl https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/v1/tunnels/my-test-app
-
-# Delete Tunnel (Future)
-curl -X DELETE https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/v1/tunnels/my-test-app
+# Expected output:
+# {
+#   "tunnel_id": "my-api",
+#   "protocol": "HTTP",
+#   "target_host": "localhost",
+#   "target_port": 3000,
+#   "status": "ACTIVE",
+#   "token": "eyJhbGc..."  # Save this token!
+# }
 ```
 
-## Deployment
-
-### Deploy to Azure (Single Command)
+### List All Tunnels
 
 ```bash
-./build-and-push-local.sh
+curl $SERVER_URL/v1/tunnels
+
+# Expected output:
+# [
+#   {
+#     "tunnel_id": "my-api",
+#     "protocol": "HTTP",
+#     "status": "ACTIVE",
+#     "created_at": "2025-11-28T10:00:00Z"
+#   }
+# ]
 ```
 
-This script:
-1. Logs into Azure Container Registry
-2. Builds Docker image for AMD64 architecture
-3. Pushes to ACR with unique tag (commit SHA + timestamp)
-4. Deploys to Azure Container Apps
-5. Waits for health checks to pass
-6. Verifies endpoint is working
-
-**Typical deployment time**: ~2 minutes
-
-### Manual Deployment Steps
-
-If you need to deploy manually:
+### Get Tunnel Details
 
 ```bash
-# 1. Login to ACR
-az acr login --name protogatedevacr
+curl $SERVER_URL/v1/tunnels/my-api
 
-# 2. Build and push image
-docker buildx build \
-  --platform linux/amd64 \
-  --build-arg CACHEBUST=$(date +%s) \
-  --no-cache \
-  -f docker/Dockerfile.alpine \
-  -t protogatedevacr.azurecr.io/protogate:v1.0.0 \
-  --push \
-  .
-
-# 3. Update Container App
-az containerapp update \
-  --name protogate-dev-app \
-  --resource-group protogate-dev-rg \
-  --image protogatedevacr.azurecr.io/protogate:v1.0.0
-
-# 4. Check health
-az containerapp revision list \
-  --name protogate-dev-app \
-  --resource-group protogate-dev-rg \
-  --query "[0].{name:name, health:properties.healthState}"
+# Expected output:
+# {
+#   "tunnel_id": "my-api",
+#   "protocol": "HTTP",
+#   "target_host": "localhost",
+#   "target_port": 3000,
+#   "status": "ACTIVE",
+#   "agents_connected": 0
+# }
 ```
 
-## Implementation Status
-
-### ✅ Completed (Phase 1 - Infrastructure + Agent)
-
-- **Server Framework**: C++ server with Boost.Asio
-- **Docker Build**: Multi-stage AMD64 builds from Mac
-- **Azure Deployment**: Container Apps with auto-scaling
-- **Health Monitoring**: `/health` endpoint with metrics
-- **Logging**: Structured JSON logging with observability
-- **TLS Setup**: Azure ingress handles TLS termination
-- **CI/CD**: Single-command automated deployment
-- **Tunnel Agent**: Complete C++ client implementation (100% done!)
-  - TLS connection with ALPN support (RFC 7540)
-  - HTTP/2 session management with nghttp2
-  - Bearer token authentication
-  - HTTP request forwarding to local services
-  - Heartbeat monitoring (30s interval, 60s timeout)
-  - Auto-reconnect with exponential backoff
-  - Structured logging with spdlog
-  - Configurable via JSON/CLI/environment
-
-### ⚠️ Partially Implemented (Phase 2 - Server Integration)
-
-- **AgentConnection**: Server can accept agent connections via `AgentHandshake`
-- **AgentRegistry**: Server tracks connected agents
-- **HTTP/2 Protocol**: Server supports HTTP/2 sessions with agents
-- **Configuration**: Environment variables setup, needs Key Vault integration
-
-### ❌ Not Yet Implemented (Phase 3 - End-to-End Functionality)
-
-- **Management API**: Tunnel CRUD endpoints (POST/GET/DELETE `/v1/tunnels`)
-- **HTTP Proxy**: Request routing from internet → agent based on Host header
-- **TCP Proxy**: Raw TCP stream forwarding for printer use case
-- **Token Management**: Secure token generation and storage in Key Vault
-- **DNS Integration**: Azure DNS wildcard domain routing
-- **Agent Deployment**: Docker image and deployment for tunnel-agent
-
-## Next Implementation Steps
-
-Based on [Feature Spec 001](specs/001-tunnel-core-server/spec.md), the priority order is:
-
-### Priority 1: Management API (Enables tunnel registration)
-
-Implement REST endpoints for tunnel management:
-- `POST /v1/tunnels` - Create tunnel, generate token, return connection details
-- `GET /v1/tunnels` - List all registered tunnels
-- `GET /v1/tunnels/{id}` - Get tunnel details and connected agents
-- `DELETE /v1/tunnels/{id}` - Delete tunnel and disconnect agents
-
-**This unblocks**: Agent connections with valid tokens, tunnel tracking, monitoring
-
-### Priority 2: HTTP Proxy (Enables HTTP tunneling use case)
-
-Implement HTTP traffic routing from internet to agents:
-- Parse `Host` header from incoming requests
-- Match to registered tunnel and find connected agent
-- Forward request through agent's HTTP/2 session
-- Return response to client
-- Handle errors (agent offline, timeout, etc.)
-
-**This enables**: User Story 1 - HTTP tunnel for web apps
-
-### Priority 3: Deploy Tunnel Agent (Make agent accessible)
-
-Package and deploy the tunnel-agent:
-- Create Dockerfile for tunnel-agent
-- Build AMD64 image
-- Deploy to Azure Container Apps or distribute as standalone binary
-- Document agent deployment for customer premises
-
-**This enables**: Customers to run agents in their networks
-
-### Priority 4: TCP Proxy (Enables printer use case)
-
-Implement TCP stream forwarding:
-- Accept TCP connections on configured ports
-- Route to appropriate agent based on tunnel config
-- Bidirectional byte streaming
-- Connection state management
-
-**This enables**: User Story 2 - TCP tunnel for printer traffic
-
-
-## Reference: Tunnel Agent Details
-
-The tunnel agent is **fully implemented** in `/Volumes/Projects/protogate/tunnel-agent/`. 
-
-### Agent Features
-
-- **Secure Connection**: TLS 1.2+ with certificate verification
-- **ALPN Support**: RFC 7540 compliant HTTP/2 negotiation
-- **Authentication**: Bearer token authentication
-- **HTTP/2 Protocol**: Efficient multiplexed connections using nghttp2
-- **Request Forwarding**: Forwards HTTP requests to local services using Boost.Beast
-- **Health Monitoring**: Automatic heartbeat (30s) with timeout detection (60s)
-- **Auto Reconnect**: Exponential backoff (1s → 60s max)
-- **Structured Logging**: JSON logs with spdlog
-- **Flexible Config**: JSON file, CLI arguments, or environment variables
-
-### Agent Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  Tunnel Agent                        │
-├─────────────────────────────────────────────────────┤
-│  Main Entry (main.cpp)                              │
-│  ├─ Configuration (JSON/CLI/ENV)                    │
-│  └─ Event Loop (Boost.Asio)                         │
-├─────────────────────────────────────────────────────┤
-│  TLS Client (tls_client.h/cpp)                      │
-│  ├─ OpenSSL integration                             │
-│  ├─ ALPN support (h2, http/1.1)                     │
-│  └─ Cipher suite configuration                      │
-├─────────────────────────────────────────────────────┤
-│  HTTP/2 Session (http2_session.h/cpp)               │
-│  ├─ nghttp2 integration                             │
-│  ├─ CONNECT handshake                               │
-│  ├─ Stream management                               │
-│  └─ Frame send/receive                              │
-├─────────────────────────────────────────────────────┤
-│  Request Forwarder (request_forwarder.h/cpp)        │
-│  ├─ HTTP client (Boost.Beast)                       │
-│  ├─ Header preservation                             │
-│  └─ Response encoding                               │
-├─────────────────────────────────────────────────────┤
-│  Health Monitor (heartbeat.h/cpp)                   │
-│  ├─ PING frame sender (30s)                         │
-│  └─ Timeout detector (60s)                          │
-├─────────────────────────────────────────────────────┤
-│  Reconnection (reconnect.h/cpp)                     │
-│  └─ Exponential backoff (1s → 60s)                  │
-└─────────────────────────────────────────────────────┘
-```
-
-### Building the Agent
+### Delete Tunnel
 
 ```bash
-cd tunnel-agent
+curl -X DELETE $SERVER_URL/v1/tunnels/my-api
 
-# Install dependencies (macOS)
-brew install cmake boost openssl nghttp2 nlohmann-json spdlog
-
-# Build
-cmake -B build -S . -DCMAKE_PREFIX_PATH=/opt/homebrew
-cmake --build build --config Release
-
-# Binary location
-./build/tunnel-agent
+# Expected: HTTP 204 No Content
 ```
 
-### Agent Configuration Example
+---
 
-```json
-{
-  "server_host": "protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io",
-  "server_port": 8443,
-  "tunnel_id": "my-app",
-  "tunnel_token": "tnl_abc123...",
-  "local_url": "http://localhost:3000",
-  "log_level": "info",
-  "heartbeat_interval": 30,
-  "heartbeat_timeout": 60,
-  "reconnect_initial_delay": 1,
-  "reconnect_max_delay": 60
-}
-```
+## Run End-to-End Tests
 
-### Running the Agent
+Automated tests verify complete tunnel flow: server → agent → local service.
 
 ```bash
-# Using config file
-./build/tunnel-agent --config config.json
-
-# Using environment variables
-export PROTOGATE_SERVER_HOST=protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io
-export PROTOGATE_SERVER_PORT=8443
-export PROTOGATE_TUNNEL_ID=my-app
-export PROTOGATE_TUNNEL_TOKEN=tnl_abc123...
-export PROTOGATE_LOCAL_URL=http://localhost:3000
-./build/tunnel-agent
-
-# With CLI arguments
-./build/tunnel-agent \
-  --server-host protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io \
-  --server-port 8443 \
-  --tunnel-id my-app \
-  --tunnel-token tnl_abc123... \
-  --local-url http://localhost:3000
+./scripts/e2e-test.sh --env test
 ```
 
-### Agent Testing
+**What it tests:**
+1. Server health endpoint (`/health`)
+2. Local test HTTP service (starts on port 3000)
+3. Tunnel creation via Management API
+4. Full HTTP proxying flow (if agent implemented)
 
-The agent includes comprehensive testing infrastructure:
+**Expected output:**
+```
+[INFO] Starting E2E tests...
+[INFO] Environment: test
+=========================================
+Running test suite...
+=========================================
+
+[INFO] Test 1: Checking server health...
+[SUCCESS] ✓ Server is healthy
+  Response: {"status":"healthy","version":"1.0.0"}
+
+[INFO] Starting test HTTP service on port 3000...
+[SUCCESS] Test service started (PID: 12345)
+
+[INFO] Test 2: Testing local service directly...
+[SUCCESS] ✓ Local test service responding
+
+[INFO] Test 3: Creating tunnel via Management API...
+[SUCCESS] ✓ Tunnel created: e2e-test
+  Token: eyJhbGc...
+
+[INFO] Cleaning up test resources...
+[INFO] Deleting test tunnel: e2e-test
+[SUCCESS] Test service stopped
+[SUCCESS] Cleanup completed
+=========================================
+[SUCCESS] All tests passed! (3/3)
+```
+
+---
+
+## Teardown
+
+### Delete Test Environment
+
+**Complete teardown** (removes everything including Key Vault):
 
 ```bash
-cd tunnel-agent
-
-# Local testing with mock server
-./test-local.sh
-
-# Integration testing
-./test-integration.sh
+./scripts/teardown-test-env.sh --env test
 ```
 
-**Documentation**:
-- `tunnel-agent/README.md` - Complete agent documentation
-- `tunnel-agent/IMPLEMENTATION_COMPLETE.md` - Implementation details
-- `tunnel-agent/TESTING.md` - Testing guide
-- `tunnel-agent/HTTP2_COMPATIBILITY.md` - HTTP/2 protocol details
-- `tunnel-agent/LOCAL_TESTING_STATUS.md` - Test results
+**What it deletes:**
+1. Container App (`protogate-test-server`)
+2. Container Apps Environment (`protogate-test-env`)
+3. Key Vault (`protogate-test-kv`) - **soft-deleted, then purged**
+4. Resource Group (`protogate-test-rg`) - includes everything else
+5. Local cached files (`azure/.keyvault-uri-test`, etc.)
 
-### Connection Flow
+**Safety features:**
+- Requires typing `DELETE` to confirm
+- Shows what will be deleted before proceeding
+- Use `--dry-run` to preview without deleting
 
-Once the Management API is implemented:
-
+**Expected output:**
 ```
-1. Admin creates tunnel via POST /v1/tunnels → receives token
-2. Agent connects to server:8443 with tunnel_id and token
-3. TLS handshake (TLS 1.2+)
-4. ALPN negotiation (prefers "h2")
-5. HTTP/1.1 CONNECT authentication (MVP compatibility)
-6. Server validates token, responds "200 Connection established"
-7. Server registers agent in AgentRegistry
-8. HTTP/2 session begins with heartbeat
-9. Internet requests → Server → Agent (HTTP/2 stream) → Local service
-10. Response flows back through tunnel
-```
-
-## Architecture Overview
-
-### Current Production Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Azure Container Apps                                         │
-│                                                              │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │ Azure Ingress (HTTPS, port 443)                        │ │
-│  │ - TLS termination                                      │ │
-│  │ - Load balancing                                       │ │
-│  └───────────────────────┬────────────────────────────────┘ │
-│                          │ Plain HTTP                       │
-│                          ▼                                   │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │ Protogate Server (port 8080)                           │ │
-│  │                                                         │ │
-│  │  ✅ HealthServer      - /health endpoint               │ │
-│  │  ⚠️ HTTPServer        - Management API (not impl)      │ │
-│  │  ⚠️ AgentServer       - Port 8443 (accepts agents)     │ │
-│  │  ⚠️ AgentConnection   - HTTP/2 session handling        │ │
-│  │  ⚠️ AgentRegistry     - Tracks connected agents        │ │
-│  │  ❌ HTTPProxy         - Traffic routing (planned)      │ │
-│  │  ❌ TCPProxy          - Stream forwarding (planned)    │ │
-│  │                                                         │ │
-│  └────────────────────────────────────────────────────────┘ │
-│                                                              │
-│  Auto-scaling: 1-3 replicas based on CPU (70% threshold)    │
-│  Health probes: HTTP GET /health every 10s                  │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ Customer Premises (or any network)                          │
-│                                                              │
-│  ✅ Tunnel Agent (tunnel-agent/)                            │
-│     - TLS client with ALPN                                  │
-│     - HTTP/2 session manager                                │
-│     - Request forwarder                                     │
-│     - Health monitoring                                     │
-│     - Auto-reconnect                                        │
-│                                                              │
-│  Status: Fully implemented, ready to deploy                 │
-└─────────────────────────────────────────────────────────────┘
+[INFO] Step 1: Validating environment
+[INFO] Step 2: Deleting Container App: protogate-test-server
+[SUCCESS] Container App deleted
+[INFO] Step 3: Deleting Container Apps environment
+[SUCCESS] Container Apps environment deleted
+[INFO] Step 4: Deleting Key Vault: protogate-test-kv
+[SUCCESS] Key Vault deleted (soft-deleted, recoverable for 90 days)
+[INFO] Step 5: Deleting resource group: protogate-test-rg
+[SUCCESS] Resource group deletion initiated
+[INFO] Step 6: Purging soft-deleted Key Vault
+[SUCCESS] Key Vault purged: protogate-test-kv
+[INFO] Step 7: Cleaning up local files
+[SUCCESS] Cleanup completed
 ```
 
-### Target Architecture (After Full Implementation)
-
-```
-Internet Client
-     │
-     │ HTTPS
-     ▼
-┌────────────────────────────────────────┐
-│ Azure Ingress                          │
-│ protogate-dev-app.*.azurecontainerapps.io │
-└────────────┬───────────────────────────┘
-             │ HTTP (TLS terminated)
-             ▼
-┌────────────────────────────────────────┐
-│ Protogate Server (Container Apps)     │
-│                                        │
-│  Port 8080: HTTP/Management            │
-│  - POST /v1/tunnels (create)          │
-│  - GET /v1/tunnels (list)             │
-│  - DELETE /v1/tunnels/{id}            │
-│  - HTTP Proxy (route by Host header)  │
-│                                        │
-│  Port 8443: Agent Connections          │
-│  - TLS handshake                       │
-│  - Token authentication                │
-│  - Bidirectional tunnel                │
-└────────┬───────────────────────────────┘
-         │ Persistent TLS tunnel
-         ▼
-┌────────────────────────────────────────┐
-│ Tunnel Agent (Customer premises)      │
-│  - Connects outbound to port 8443     │
-│  - Maintains persistent connection    │
-│  - Forwards to local services         │
-└────────┬───────────────────────────────┘
-         │ Local network
-         ▼
-┌────────────────────────────────────────┐
-│ Local Service (HTTP/TCP)               │
-│  - Web app on localhost:3000          │
-│  - Printer on localhost:9100          │
-│  - Database on localhost:5432         │
-└────────────────────────────────────────┘
-```
-
-## Useful Commands
-
-### Check Deployment Status
-```bash
-az containerapp show \
-  --name protogate-dev-app \
-  --resource-group protogate-dev-rg \
-  --query "{status:properties.runningStatus, health:properties.latestRevisionName, url:properties.configuration.ingress.fqdn}"
-```
-
-### View Logs
-```bash
-az containerapp logs show \
-  --name protogate-dev-app \
-  --resource-group protogate-dev-rg \
-  --tail 50 \
-  --follow
-```
-
-### List All Revisions
-```bash
-az containerapp revision list \
-  --name protogate-dev-app \
-  --resource-group protogate-dev-rg \
-  --query "[].{revision:name, health:properties.healthState, traffic:properties.trafficWeight, created:properties.createdTime}"
-```
-
-### Check Container Metrics
-```bash
-az containerapp show \
-  --name protogate-dev-app \
-  --resource-group protogate-dev-rg \
-  --query "properties.template.scale.{min:minReplicas, max:maxReplicas, rules:rules}"
-```
-
-### Test Health Endpoint
-```bash
-# Quick check
-curl -s https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/health | jq '.status'
-
-# Full response with metrics
-curl -s https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/health | jq
-```
-
-## Development Workflow
-
-### Make Code Changes
-
-1. Edit source files in `src/`
-2. Test locally (optional - requires local build)
-3. Commit changes to Git
-4. Deploy: `./build-and-push-local.sh`
-5. Verify: Check health endpoint
-
-### Local Testing (Optional)
+### Preview Without Deleting
 
 ```bash
-# Build locally
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target protogate-server
-
-# Run tests
-./build/unit_tests          # 85 unit tests
-./build/integration_tests   # 124 integration tests
-./build/security_tests      # Security fuzzing tests
-
-# Run server locally
-./build/protogate-server
+# Dry-run mode (safe, no changes)
+./scripts/teardown-test-env.sh --env test --dry-run
 ```
 
-**Note**: Local testing requires environment variables for Azure resources (Key Vault, DNS). For most development, deploying to Azure is easier.
+### Partial Teardown Options
+
+```bash
+# Keep resource group, delete individual resources
+./scripts/teardown-test-env.sh --env test --keep-rg
+
+# Keep DNS records (if configured)
+./scripts/teardown-test-env.sh --env test --keep-dns
+```
+
+---
+
+## Production Deployment
+
+### Before Production
+
+1. Review test environment configuration
+2. Plan domain names (e.g., `tunnel.yourcompany.com`)
+3. Decide on dedicated vs consumption Container Apps plan
+4. Plan monitoring and alerts
+
+### Deploy Production
+
+```bash
+# Deploy production environment
+./scripts/deploy-test-env.sh --env prod
+
+# Expected resources created:
+# - Resource Group: protogate-prod-rg
+# - Key Vault: protogate-prod-kv
+# - Container Registry: protogateprodacr
+# - Container App: protogate-prod-server
+```
+
+### Configure DNS (Optional - Phase 7)
+
+```bash
+# Configure custom domain with Let's Encrypt
+./scripts/configure-dns.sh \
+  --env prod \
+  --zone yourcompany.com \
+  --subdomain tunnel \
+  --letsencrypt \
+  --email admin@yourcompany.com
+
+# This creates:
+# - tunnel.yourcompany.com → Management API
+# - *.tunnel.yourcompany.com → Individual tunnels
+# - Let's Encrypt wildcard certificate
+```
+
+---
 
 ## Troubleshooting
 
-### Deployment Issues
+### Deployment Failed
 
-**Problem**: `exec format error`
-- **Cause**: Wrong CPU architecture (ARM64 instead of AMD64)
-- **Solution**: Deployment script already uses `--platform linux/amd64`
+**Problem:** `ResourceGroupBeingDeleted` error
 
-**Problem**: Container App shows "Unhealthy"
-- **Check**: `az containerapp logs show --name protogate-dev-app --resource-group protogate-dev-rg --tail 100`
-- **Verify**: Health endpoint returns HTTP 200
+```bash
+# Wait for deletion to complete
+az group show --name protogate-test-rg --query "properties.provisioningState"
 
-**Problem**: 502 Bad Gateway
-- **Cause**: Container not listening on port 8080
-- **Check**: Logs for "server ready" message
-- **Verify**: Health probes are configured for port 8080
+# Should return error "could not be found" when ready
+```
 
-### Connection Issues
+**Problem:** `Key Vault already exists in deleted state`
 
-**Problem**: Cannot reach public URL
-- **Verify**: `curl https://protogate-dev-app.victorioussmoke-2a30f7aa.eastus.azurecontainerapps.io/health`
-- **Check**: Container App status is "Running"
-- **Check**: At least 1 replica is active
+```bash
+# Purge soft-deleted Key Vault
+az keyvault purge --name protogate-test-kv
 
-**Problem**: Slow response times
-- **Check**: Current replica count vs load
-- **Adjust**: Auto-scaling rules if needed
-- **Monitor**: Azure Container Apps metrics in portal
+# Wait 30 seconds, then retry deployment
+./scripts/deploy-test-env.sh --env test
+```
 
+**Problem:** `Failed to login to ACR`
 
+```bash
+# Re-login to Azure
+az login
 
+# Verify subscription
+az account show
 
-## Documentation Resources
+# Try manual ACR login
+az acr login --name protogatedevacr
+```
 
-- **Feature Specification**: [specs/001-tunnel-core-server/spec.md](specs/001-tunnel-core-server/spec.md) - Full requirements and user stories
-- **Implementation Plan**: [specs/001-tunnel-core-server/plan.md](specs/001-tunnel-core-server/plan.md) - Architecture and technical decisions  
-- **Agent Protocol**: [specs/001-tunnel-core-server/contracts/agent-protocol.md](specs/001-tunnel-core-server/contracts/agent-protocol.md) - Agent connection specification
-- **Management API**: [specs/001-tunnel-core-server/contracts/management-api.yaml](specs/001-tunnel-core-server/contracts/management-api.yaml) - REST API specification
-- **Deployment Guide**: [DEPLOYMENT.md](DEPLOYMENT.md) - Azure Container Apps deployment details
-- **Task List**: [specs/001-tunnel-core-server/tasks.md](specs/001-tunnel-core-server/tasks.md) - Implementation checklist
+### E2E Tests Failed
 
-## Need Help?
+**Problem:** `Server URL file not found`
 
-Current deployment is functional but incomplete. Next steps for full functionality:
+```bash
+# Deploy environment first
+./scripts/deploy-test-env.sh --env test
 
-1. **Implement Management API** - REST endpoints for tunnel management
-2. **Build Agent Protocol** - TLS connection and authentication
-3. **Add HTTP Proxy** - Route traffic based on Host header
-4. **Add TCP Proxy** - Forward raw TCP streams
-5. **Integrate Key Vault** - Secure token storage
-6. **Setup DNS** - Wildcard domain routing
+# Verify file exists
+cat azure/.server-url-test
+```
 
-Refer to the [tasks.md](specs/001-tunnel-core-server/tasks.md) file for detailed implementation steps.
+**Problem:** `Health check failed`
+
+```bash
+# Check container logs
+az containerapp logs show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --tail 100
+
+# Verify container is running
+az containerapp show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --query "properties.runningStatus"
+```
+
+**Problem:** `Tunnel creation returns 409 Conflict`
+
+```bash
+# Delete existing tunnel first
+curl -X DELETE $SERVER_URL/v1/tunnels/e2e-test
+
+# Or run cleanup manually
+./scripts/e2e-test.sh --env test --skip-cleanup
+```
+
+### View Logs
+
+```bash
+# Stream container logs
+az containerapp logs show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --follow
+
+# View recent errors
+az containerapp logs show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --tail 100 | grep ERROR
+```
+
+### Check Resource Status
+
+```bash
+# List all resources in resource group
+az resource list \
+  --resource-group protogate-test-rg \
+  --output table
+
+# Check container app health
+az containerapp show \
+  --name protogate-test-server \
+  --resource-group protogate-test-rg \
+  --query "{Status:properties.runningStatus, Health:properties.health, Replicas:properties.template.scale}" \
+  --output table
+```
+
+---
+
+## Advanced Usage
+
+### Custom Image Tag
+
+```bash
+# Deploy with specific image version
+./scripts/deploy-test-env.sh --env test --image-tag v1.2.3
+```
+
+### Custom Location
+
+```bash
+# Deploy to different Azure region
+./scripts/deploy-test-env.sh --env test --location eastus
+```
+
+### Specify Key Vault Name
+
+```bash
+# Use custom Key Vault name (default: protogate-{env}-kv)
+./scripts/deploy-test-env.sh --env test --keyvault-name my-custom-kv
+```
+
+### Verbose Output
+
+```bash
+# Enable detailed logging
+./scripts/deploy-test-env.sh --env test --verbose
+```
+
+---
+
+## Next Steps
+
+1. ✅ **Complete deployment** - Test environment working
+2. ⏭️ **Configure DNS** - Custom domains (optional)
+3. ⏭️ **Setup monitoring** - Application Insights and alerts
+4. ⏭️ **Production deployment** - Deploy to prod environment
+5. ⏭️ **Agent integration** - Deploy tunnel agents
+6. ⏭️ **Documentation** - Update external docs with URLs
+
+---
+
+## Quick Reference
+
+### Essential Commands
+
+```bash
+# Deploy test environment
+./scripts/deploy-test-env.sh --env test
+
+# Verify deployment
+curl $(cat azure/.server-url-test)/health
+
+# Run e2e tests
+./scripts/e2e-test.sh --env test
+
+# Teardown everything
+./scripts/teardown-test-env.sh --env test
+```
+
+### Important Files
+
+- `azure/.server-url-test` - Test server URL
+- `azure/.keyvault-uri-test` - Key Vault URI
+- `azure/.managed-identity-test` - Managed identity ID
+- `scripts/deploy-test-env.sh` - Deployment script
+- `scripts/teardown-test-env.sh` - Teardown script
+- `scripts/e2e-test.sh` - End-to-end tests
+
+### Azure Resources (Test Environment)
+
+- Resource Group: `protogate-test-rg`
+- Container App: `protogate-test-server`
+- Container Environment: `protogate-test-env`
+- Key Vault: `protogate-test-kv`
+- Container Registry: `protogatetest acr`
+- Log Analytics: `protogate-test-logs`
+
+---
+
+## Support
+
+For issues or questions:
+
+1. Check [Troubleshooting](#troubleshooting) section
+2. View container logs: `az containerapp logs show ...`
+3. Review deployment script: `./scripts/deploy-test-env.sh --dry-run`
+4. Check Azure Portal for resource status
+
+**Documentation:**
+- Deployment scripts: `specs/001-azure-deployment-test/`
+- Management API: `specs/002-management-api-http-proxy/`
+- Feature status: `FEATURE_COMPLETE.md`
 
