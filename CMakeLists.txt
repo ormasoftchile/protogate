@@ -20,6 +20,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         -Wall
         -Wextra
         -Wno-unused-parameter
+        -Wno-unused-private-field
     )
     
     # For GCC, don't use -Wpedantic because it rejects GNU ##__VA_ARGS__ extension
