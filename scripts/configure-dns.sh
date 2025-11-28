@@ -308,7 +308,48 @@ validate_dns_propagation() {
     return 1
 }
 
-# Function: Provision Let's Encrypt certificate
+# Function: Create DNS TXT record for ACME challenge
+create_acme_txt_record() {
+    local challenge_domain="$1"
+    local challenge_value="$2"
+    
+    log_info "Creating TXT record for ACME challenge: $challenge_domain"
+    
+    # Extract record name (remove base zone)
+    local record_name="${challenge_domain%.$BASE_ZONE}"
+    
+    if az network dns record-set txt add-record \
+        --resource-group "$DNS_ZONE_RESOURCE_GROUP" \
+        --zone-name "$BASE_ZONE" \
+        --record-set-name "$record_name" \
+        --value "$challenge_value" \
+        --output none 2>/dev/null; then
+        log_success "TXT record created: $record_name"
+        return 0
+    else
+        log_error "Failed to create TXT record"
+        return 1
+    fi
+}
+
+# Function: Delete DNS TXT record for ACME challenge
+delete_acme_txt_record() {
+    local challenge_domain="$1"
+    
+    log_info "Cleaning up TXT record: $challenge_domain"
+    
+    # Extract record name (remove base zone)
+    local record_name="${challenge_domain%.$BASE_ZONE}"
+    
+    az network dns record-set txt delete \
+        --resource-group "$DNS_ZONE_RESOURCE_GROUP" \
+        --zone-name "$BASE_ZONE" \
+        --name "$record_name" \
+        --yes \
+        --output none 2>/dev/null || true
+}
+
+# Function: Provision Let's Encrypt certificate using manual auth hook
 provision_letsencrypt_cert() {
     local domain="$1"
     local wildcard_domain="$2"
@@ -322,26 +363,93 @@ provision_letsencrypt_cert() {
         return 0
     fi
     
-    # Check if certbot is installed
-    if ! command -v certbot &> /dev/null; then
-        log_error "certbot is not installed. Install with: brew install certbot"
-        return 1
-    fi
-    
     local cert_dir="$PROJECT_ROOT/azure/letsencrypt"
     mkdir -p "$cert_dir"
     
-    log_info "Running certbot for DNS-01 challenge..."
-    log_warn "Note: DNS-01 challenge requires manual TXT record creation"
-    log_warn "Certbot will display the TXT record you need to create"
+    # Create auth hook script
+    local auth_hook="$cert_dir/auth-hook.sh"
+    cat > "$auth_hook" << 'HOOK_EOF'
+#!/bin/bash
+# This script is called by certbot to create the DNS TXT record
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../../scripts/common.sh"
+
+# certbot provides these environment variables:
+# CERTBOT_DOMAIN: Domain being authenticated
+# CERTBOT_VALIDATION: Validation string
+# CERTBOT_TOKEN: Unique token for this challenge
+
+CHALLENGE_DOMAIN="_acme-challenge.${CERTBOT_DOMAIN}"
+CHALLENGE_VALUE="${CERTBOT_VALIDATION}"
+
+log_info "Auth hook: Creating TXT record for ${CHALLENGE_DOMAIN}"
+
+# Load configuration from parent script
+source "${SCRIPT_DIR}/config.sh"
+
+# Extract record name
+RECORD_NAME="${CHALLENGE_DOMAIN%.${BASE_ZONE}}"
+
+# Create TXT record
+az network dns record-set txt add-record \
+    --resource-group "${DNS_ZONE_RESOURCE_GROUP}" \
+    --zone-name "${BASE_ZONE}" \
+    --record-set-name "${RECORD_NAME}" \
+    --value "${CHALLENGE_VALUE}" \
+    --output none
+
+# Wait for DNS propagation
+log_info "Waiting 30 seconds for DNS propagation..."
+sleep 30
+HOOK_EOF
+
+    # Create cleanup hook script
+    local cleanup_hook="$cert_dir/cleanup-hook.sh"
+    cat > "$cleanup_hook" << 'HOOK_EOF'
+#!/bin/bash
+# This script is called by certbot to remove the DNS TXT record
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../../scripts/common.sh"
+
+CHALLENGE_DOMAIN="_acme-challenge.${CERTBOT_DOMAIN}"
+
+log_info "Cleanup hook: Removing TXT record for ${CHALLENGE_DOMAIN}"
+
+# Load configuration from parent script
+source "${SCRIPT_DIR}/config.sh"
+
+# Extract record name
+RECORD_NAME="${CHALLENGE_DOMAIN%.${BASE_ZONE}}"
+
+# Delete TXT record
+az network dns record-set txt delete \
+    --resource-group "${DNS_ZONE_RESOURCE_GROUP}" \
+    --zone-name "${BASE_ZONE}" \
+    --name "${RECORD_NAME}" \
+    --yes \
+    --output none 2>/dev/null || true
+HOOK_EOF
+
+    # Create config file for hooks
+    cat > "$cert_dir/config.sh" << EOF
+BASE_ZONE="$BASE_ZONE"
+DNS_ZONE_RESOURCE_GROUP="$DNS_ZONE_RESOURCE_GROUP"
+EOF
+
+    chmod +x "$auth_hook" "$cleanup_hook"
     
-    # Run certbot in manual mode for DNS-01 challenge
-    if sudo certbot certonly \
+    log_info "Running certbot with automated DNS-01 challenge..."
+    
+    # Run certbot with manual hooks
+    if certbot certonly \
         --manual \
         --preferred-challenges dns \
+        --manual-auth-hook "$auth_hook" \
+        --manual-cleanup-hook "$cleanup_hook" \
         --email "$email" \
         --agree-tos \
         --no-eff-email \
+        --non-interactive \
         -d "$domain" \
         -d "$wildcard_domain" \
         --config-dir "$cert_dir/config" \
