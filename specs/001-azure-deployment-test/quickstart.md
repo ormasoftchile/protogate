@@ -312,7 +312,7 @@ az acr repository show-tags \
 
 1. **Setup DNS** - Configure custom domain for tunnels
    ```bash
-   ./scripts/configure-dns.sh --env test --zone tunnel.example.com
+   ./scripts/configure-dns.sh --env test --zone tunnel.ormasoft.cl --letsencrypt
    ```
 
 2. **Enable Monitoring** - Add Application Insights and alerts

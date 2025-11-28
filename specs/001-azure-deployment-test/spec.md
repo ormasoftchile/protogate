@@ -157,18 +157,18 @@ curl -v https://test.tunnel.example.com 2>&1 | grep "subject:"
 **Independent Test**:
 ```bash
 # Configure DNS
-./scripts/configure-dns.sh --env test --zone tunnel.example.com
+./scripts/configure-dns.sh --env test --zone tunnel.ormasoft.cl --letsencrypt
 
 # Verify DNS resolution
-dig @8.8.8.8 test-api.tunnel.example.com
+dig @8.8.8.8 test-api.tunnel.ormasoft.cl
 
 # Expected: A record pointing to container app IP
 ```
 
 **Acceptance Scenarios**:
-1. **Given** DNS zone created, **When** adding wildcard record, **Then** DNS propagates within 5 minutes
-2. **Given** DNS configured, **When** querying `{tunnel_id}.tunnel.example.com`, **Then** resolves to container app ingress
-3. **Given** DNS resolved, **When** making HTTPS request to tunnel subdomain, **Then** routes to correct tunnel
+1. **Given** Azure DNS zone `ormasoft.cl` exists, **When** adding wildcard record under `tunnel.ormasoft.cl`, **Then** DNS propagates within 5 minutes and Let's Encrypt cert provisioned
+2. **Given** DNS configured, **When** querying `{tunnel_id}.tunnel.ormasoft.cl`, **Then** resolves to container app ingress
+3. **Given** DNS resolved with Let's Encrypt cert, **When** making HTTPS request to tunnel subdomain, **Then** routes to correct tunnel with valid certificate
 
 ---
 
@@ -224,7 +224,7 @@ az monitor app-insights query \
   - Health probe: HTTP GET /health on port 8080 every 30 seconds, failure threshold: 3 consecutive failures
   - Environment variables:
     - `KEY_VAULT_URI`: Azure Key Vault URL
-    - `DNS_ZONE`: `tunnel.example.com`
+    - `DNS_ZONE`: `tunnel.ormasoft.cl` (subdomain under existing ormasoft.cl zone)
     - `LOG_LEVEL`: `INFO`
   - Managed Identity: Enabled (for Key Vault access)
   - Scaling: Min 1, Max 5 replicas
@@ -497,18 +497,20 @@ curl https://{server-url}/health
 - `scripts/configure-dns.sh` - Azure DNS zone and record provisioning
 
 **Tasks**:
-1. Create Azure DNS zone (or use existing)
-2. Add wildcard A/CNAME record: `*.tunnel.example.com`
-3. Add root record for Management API
-4. Validate DNS resolution
-5. Update container app ingress with custom domain
-6. Configure TLS certificate for custom domain
+1. Use existing Azure DNS zone `ormasoft.cl`
+2. Create subdomain records under `tunnel.ormasoft.cl`:
+   - Root A record for Management API
+   - Wildcard A/CNAME record: `*.tunnel.ormasoft.cl`
+3. Provision Let's Encrypt wildcard certificate via ACME DNS-01 challenge
+4. Configure custom domain on Container Apps with Let's Encrypt cert
+5. Validate DNS resolution
+6. Test HTTPS access with valid certificate
 
 **Validation**:
 ```bash
-./scripts/configure-dns.sh --env test --zone test.tunnel.example.com
-dig @8.8.8.8 test-api.test.tunnel.example.com
-curl https://test-api.test.tunnel.example.com/
+./scripts/configure-dns.sh --env test --zone tunnel.ormasoft.cl --letsencrypt
+dig @8.8.8.8 test-api.tunnel.ormasoft.cl
+curl https://test-api.tunnel.ormasoft.cl/  # Valid Let's Encrypt certificate
 ```
 
 **Success Criteria**:

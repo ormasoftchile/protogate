@@ -80,8 +80,8 @@ test_server_health() {
     fi
     
     local response=$(curl -s -w "\n%{http_code}" "${SERVER_URL}/health" 2>/dev/null)
-    local body=$(echo "$response" | head -n -1)
     local status=$(echo "$response" | tail -n 1)
+    local body=$(echo "$response" | sed '$d')
     
     if [ "$status" = "200" ]; then
         log_success "✓ Server is healthy"
@@ -107,17 +107,23 @@ test_create_tunnel() {
     local response=$(curl -s -w "\n%{http_code}" -X POST \
         "${SERVER_URL}/v1/tunnels" \
         -H "Content-Type: application/json" \
-        -d '{"name":"e2e-test-tunnel"}' 2>/dev/null)
+        -d '{
+            "tunnel_id": "e2e-test",
+            "protocol": "HTTP",
+            "target_host": "localhost",
+            "target_port": 3000
+        }' 2>/dev/null)
     
-    local body=$(echo "$response" | head -n -1)
     local status=$(echo "$response" | tail -n 1)
+    local body=$(echo "$response" | sed '$d')
     
     if [ "$status" = "201" ] || [ "$status" = "200" ]; then
-        TUNNEL_ID=$(echo "$body" | grep -o '"id":"[^"]*"' | cut -d'"' -f4 || echo "")
+        TUNNEL_ID=$(echo "$body" | grep -o '"tunnel_id":"[^"]*"' | cut -d'"' -f4 || echo "")
         TUNNEL_TOKEN=$(echo "$body" | grep -o '"token":"[^"]*"' | cut -d'"' -f4 || echo "")
         
         if [ -n "$TUNNEL_ID" ]; then
             log_success "✓ Tunnel created: $TUNNEL_ID"
+            log_info "  Token: ${TUNNEL_TOKEN:0:20}..."
             return 0
         fi
     fi
@@ -152,10 +158,11 @@ cleanup() {
     
     stop_test_service
     
-    # TODO: Delete tunnel if created
-    # if [ -n "$TUNNEL_ID" ]; then
-    #     curl -s -X DELETE "${SERVER_URL}/v1/tunnels/${TUNNEL_ID}" >/dev/null 2>&1 || true
-    # fi
+    # Delete tunnel if created
+    if [ -n "${TUNNEL_ID:-}" ]; then
+        log_info "Deleting test tunnel: $TUNNEL_ID"
+        curl -s -X DELETE "${SERVER_URL}/v1/tunnels/${TUNNEL_ID}" >/dev/null 2>&1 || true
+    fi
     
     log_success "Cleanup completed"
 }

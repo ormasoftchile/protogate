@@ -24,6 +24,7 @@ Options:
     --verbose, -v       Enable verbose output
     --image-tag <tag>   Docker image tag (default: $IMAGE_TAG)
     --location <loc>    Azure region (default: $LOCATION)
+    --keyvault-name <name>  Key Vault name (default: protogate-{env}-kv, auto-created)
 
 Examples:
     $0 --env test
@@ -33,18 +34,164 @@ EOF
     exit 1
 }
 
-load_keyvault_uri() {
-    local uri_file="$SCRIPT_DIR/../azure/.keyvault-uri-${ENVIRONMENT}"
+create_keyvault() {
+    local rg=$(get_resource_group)
+    local kv_name="${KEYVAULT_NAME:-protogate-${ENVIRONMENT}-kv}"
     
-    if [ ! -f "$uri_file" ]; then
-        log_warn "Key Vault URI file not found: $uri_file"
-        log_info "Run: ./scripts/provision-keyvault.sh --env $ENVIRONMENT"
-        return 1
+    log_info "Ensuring Key Vault exists: $kv_name"
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would create Key Vault: $kv_name"
+        KEYVAULT_URI="https://${kv_name}.vault.azure.net/"
+        return 0
     fi
     
-    KEYVAULT_URI=$(cat "$uri_file")
-    log_info "Key Vault URI loaded: $KEYVAULT_URI"
-    return 0
+    # Check if Key Vault exists
+    if az keyvault show --name "$kv_name" --resource-group "$rg" &> /dev/null; then
+        log_info "Key Vault already exists: $kv_name"
+    else
+        log_info "Creating Key Vault: $kv_name"
+        az keyvault create \
+            --name "$kv_name" \
+            --resource-group "$rg" \
+            --location "$LOCATION" \
+            --enable-rbac-authorization false \
+            --output none || error_exit "Failed to create Key Vault"
+        
+        log_success "Key Vault created: $kv_name"
+    fi
+    
+    # Set global variable
+    KEYVAULT_URI="https://${kv_name}.vault.azure.net/"
+    echo "$KEYVAULT_URI" > "$SCRIPT_DIR/../azure/.keyvault-uri-${ENVIRONMENT}"
+    log_info "Key Vault URI: $KEYVAULT_URI"
+}
+
+create_resource_group() {
+    local rg=$(get_resource_group)
+    
+    log_info "Ensuring resource group exists: $rg"
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would create resource group: $rg"
+        return 0
+    fi
+    
+    if az group show --name "$rg" &> /dev/null; then
+        log_info "Resource group already exists: $rg"
+    else
+        log_info "Creating resource group: $rg"
+        az group create \
+            --name "$rg" \
+            --location "$LOCATION" \
+            --tags environment="$ENVIRONMENT" project=protogate \
+            --output none || error_exit "Failed to create resource group"
+        
+        log_success "Resource group created: $rg"
+    fi
+}
+
+create_log_analytics_workspace() {
+    local rg=$(get_resource_group)
+    local workspace_name="protogate-${ENVIRONMENT}-logs"
+    
+    log_info "Ensuring Log Analytics workspace exists: $workspace_name"
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would create Log Analytics workspace: $workspace_name"
+        return 0
+    fi
+    
+    if az monitor log-analytics workspace show --workspace-name "$workspace_name" --resource-group "$rg" &> /dev/null; then
+        log_info "Log Analytics workspace already exists: $workspace_name"
+    else
+        log_info "Creating Log Analytics workspace: $workspace_name"
+        az monitor log-analytics workspace create \
+            --workspace-name "$workspace_name" \
+            --resource-group "$rg" \
+            --location "$LOCATION" \
+            --output none || error_exit "Failed to create Log Analytics workspace"
+        
+        log_success "Log Analytics workspace created: $workspace_name"
+    fi
+}
+
+create_container_registry() {
+    local rg=$(get_resource_group)
+    local acr_name="protogate${ENVIRONMENT}acr"
+    
+    log_info "Ensuring Container Registry exists: $acr_name"
+    
+    # Update global ACR variables
+    ACR_NAME="$acr_name"
+    ACR_REGISTRY="${ACR_NAME}.azurecr.io"
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would create Container Registry: $acr_name"
+        return 0
+    fi
+    
+    if az acr show --name "$acr_name" --resource-group "$rg" &> /dev/null; then
+        log_info "Container Registry already exists: $acr_name"
+    else
+        log_info "Creating Container Registry: $acr_name"
+        az acr create \
+            --resource-group "$rg" \
+            --name "$acr_name" \
+            --sku Basic \
+            --admin-enabled true \
+            --location "$LOCATION" \
+            --output none || error_exit "Failed to create Container Registry"
+        
+        log_success "Container Registry created: $acr_name"
+    fi
+    
+    # Login to ACR
+    log_info "Logging in to Container Registry..."
+    az acr login --name "$acr_name" || error_exit "Failed to login to ACR"
+}
+
+build_and_push_image() {
+    local image_name="protogate-server"
+    local full_image="${ACR_REGISTRY}/${image_name}:${IMAGE_TAG}"
+    
+    log_info "Building and pushing Docker image: $full_image"
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would build and push image: $full_image"
+        return 0
+    fi
+    
+    # Check if running on Apple Silicon (ARM64)
+    local platform="linux/amd64"
+    local dockerfile="docker/Dockerfile.alpine"
+    
+    if [ "$(uname -m)" = "arm64" ]; then
+        log_info "Detected ARM64 (Apple Silicon), building multi-platform image..."
+        platform="linux/amd64,linux/arm64"
+    fi
+    
+    # Verify Dockerfile exists
+    if [ ! -f "$SCRIPT_DIR/../$dockerfile" ]; then
+        log_error "Dockerfile not found: $dockerfile"
+        log_info "Available Dockerfiles:"
+        ls -la "$SCRIPT_DIR/../docker/" | grep Dockerfile || true
+        error_exit "Dockerfile not found"
+    fi
+    
+    # Build using Docker Buildx for multi-platform support
+    log_info "Building image for platform: $platform"
+    log_info "Using Dockerfile: $dockerfile"
+    cd "$SCRIPT_DIR/.."
+    
+    docker buildx build \
+        --platform "$platform" \
+        --tag "$full_image" \
+        --push \
+        --file "$dockerfile" \
+        . || error_exit "Failed to build and push Docker image"
+    
+    log_success "Image built and pushed: $full_image"
 }
 
 provision_container_apps_environment() {
@@ -63,11 +210,37 @@ provision_container_apps_environment() {
         log_info "Container Apps environment already exists: $env_name"
     else
         log_info "Creating Container Apps environment: $env_name"
-        az containerapp env create \
-            --name "$env_name" \
+        
+        # Get Log Analytics workspace info
+        local workspace_name="protogate-${ENVIRONMENT}-logs"
+        local workspace_id=$(az monitor log-analytics workspace show \
+            --workspace-name "$workspace_name" \
             --resource-group "$rg" \
-            --location "$LOCATION" \
-            --output none || error_exit "Failed to create Container Apps environment"
+            --query customerId \
+            --output tsv 2>/dev/null || echo "")
+        local workspace_key=$(az monitor log-analytics workspace get-shared-keys \
+            --workspace-name "$workspace_name" \
+            --resource-group "$rg" \
+            --query primarySharedKey \
+            --output tsv 2>/dev/null || echo "")
+        
+        if [ -n "$workspace_id" ] && [ -n "$workspace_key" ]; then
+            log_info "Using Log Analytics workspace: $workspace_name"
+            az containerapp env create \
+                --name "$env_name" \
+                --resource-group "$rg" \
+                --location "$LOCATION" \
+                --logs-workspace-id "$workspace_id" \
+                --logs-workspace-key "$workspace_key" \
+                --output none || error_exit "Failed to create Container Apps environment"
+        else
+            log_warn "Log Analytics workspace not configured, creating without logs"
+            az containerapp env create \
+                --name "$env_name" \
+                --resource-group "$rg" \
+                --location "$LOCATION" \
+                --output none || error_exit "Failed to create Container Apps environment"
+        fi
         
         log_success "Container Apps environment created: $env_name"
     fi
@@ -112,7 +285,7 @@ deploy_server_app() {
             --env-vars \
                 "PORT=8080" \
                 "AGENT_PORT=8443" \
-                "KEY_VAULT_URI=${KEYVAULT_URI:-}" \
+                "KEY_VAULT_URI=${KEYVAULT_URI}" \
                 "DNS_ZONE=tunnel.${ENVIRONMENT}.example.com" \
                 "LOG_LEVEL=INFO" \
             --output none || error_exit "Failed to create container app"
@@ -125,6 +298,7 @@ deploy_server_app() {
             --name "$app_name" \
             --resource-group "$rg" \
             --image "$image" \
+            --set-env-vars "KEY_VAULT_URI=${KEYVAULT_URI}" \
             --output none || error_exit "Failed to update container app"
         
         log_success "Container app updated: $app_name"
@@ -161,6 +335,7 @@ enable_managed_identity() {
 grant_keyvault_access() {
     local app_name=$(get_server_app_name)
     local rg=$(get_resource_group)
+    local kv_name="${KEYVAULT_NAME:-protogate-${ENVIRONMENT}-kv}"
     
     log_info "Granting Key Vault access to container app..."
     
@@ -181,9 +356,6 @@ grant_keyvault_access() {
         return 0
     fi
     
-    # Get Key Vault name
-    local kv_name=$(get_keyvault_name)
-    
     # Grant access to secrets
     log_info "Granting identity $identity access to Key Vault $kv_name"
     az keyvault set-policy \
@@ -192,7 +364,7 @@ grant_keyvault_access() {
         --secret-permissions get list \
         --output none || log_warn "Failed to set Key Vault access policy"
     
-    log_success "Key Vault access granted"
+    log_success "Key Vault access granted to managed identity: $identity"
 }
 
 configure_health_probe() {
@@ -292,6 +464,10 @@ main() {
                 LOCATION="$2"
                 shift 2
                 ;;
+            --keyvault-name)
+                KEYVAULT_NAME="$2"
+                shift 2
+                ;;
             --dry-run|--json|--verbose|-v)
                 shift
                 ;;
@@ -316,15 +492,15 @@ main() {
     check_azure_cli
     check_azure_login
     
-    # Load Key Vault URI
-    if ! load_keyvault_uri; then
-        log_warn "Continuing without Key Vault configuration"
-    fi
-    
     # Provision resources
     local rg=$(get_resource_group)
     log_info "Using resource group: $rg"
     
+    create_resource_group
+    create_log_analytics_workspace
+    create_keyvault
+    create_container_registry
+    build_and_push_image
     provision_container_apps_environment
     deploy_server_app
     enable_managed_identity

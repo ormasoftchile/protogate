@@ -185,8 +185,8 @@ External:
 
 All unknowns from Technical Context have been researched and decided:
 
-1. **DNS Provider**: Create new Azure DNS zone per environment (test/prod isolation)
-2. **Certificate Source**: Self-signed for test, Let's Encrypt or corporate CA for prod
+1. **DNS Provider**: Use existing Azure DNS zone `ormasoft.cl` with subdomain `tunnel.ormasoft.cl` (test uses `test.tunnel.ormasoft.cl`)
+2. **Certificate Source**: Let's Encrypt for both test and production (automatic renewal via ACME DNS-01 challenge)
 3. **Subscription Limits**: Check quotas before deployment, document in prerequisites
 
 ---

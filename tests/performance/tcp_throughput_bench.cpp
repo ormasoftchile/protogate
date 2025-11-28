@@ -17,7 +17,7 @@ using namespace protogate;
 namespace asio = boost::asio;
 
 // Global test fixtures
-static std::shared_ptr<core::IOContextPool> g_io_pool;
+static std::shared_ptr<server::IOContextPool> g_io_pool;
 static std::shared_ptr<agent::AgentRegistry> g_agent_registry;
 static std::shared_ptr<storage::Cache<std::string, models::Tunnel>> g_tunnel_cache;
 static std::unique_ptr<proxy::TCPProxy> g_tcp_proxy;
@@ -26,14 +26,13 @@ static std::thread g_io_thread;
 // Initialize test infrastructure once
 static void SetupBenchmark() {
     if (!g_io_pool) {
-        g_io_pool = std::make_shared<core::IOContextPool>(4); // 4 threads for performance
+        g_io_pool = std::make_shared<server::IOContextPool>(4); // 4 threads for performance
         g_agent_registry = std::make_shared<agent::AgentRegistry>(100);
         g_tunnel_cache = std::make_shared<storage::Cache<std::string, models::Tunnel>>(std::chrono::seconds(1000));
         
         g_tcp_proxy = std::make_unique<proxy::TCPProxy>(
-            g_io_pool,
-            g_agent_registry,
-            g_tunnel_cache
+            g_tunnel_cache,
+            g_agent_registry
         );
         
         // Configure tunnel
@@ -43,16 +42,16 @@ static void SetupBenchmark() {
         tunnel.target_port = 9100;
         tunnel.protocol = models::TunnelProtocol::TCP;
         tunnel.status = models::TunnelStatus::ACTIVE;
-        g_tunnel_cache->set("bench_printer", tunnel, std::chrono::hours(1));
+        g_tunnel_cache->put("bench_printer", tunnel, std::chrono::hours(1));
         
         // Start IO thread pool
-        g_io_thread = std::thread([]() {
-            g_io_pool->run();
+        g_io_thread = std::thread([&]() {
+            g_io_pool->start();
         });
     }
 }
 
-static void TeardownBenchmark() {
+[[maybe_unused]] static void TeardownBenchmark() {
     if (g_io_pool) {
         g_io_pool->stop();
         if (g_io_thread.joinable()) {
@@ -75,7 +74,7 @@ static void BM_SmallPacketThroughput(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;
@@ -112,7 +111,7 @@ static void BM_MediumPacketThroughput(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;
@@ -149,7 +148,7 @@ static void BM_LargePacketThroughput(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;
@@ -186,7 +185,7 @@ static void BM_StreamingThroughput(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;
@@ -238,7 +237,7 @@ static void BM_ConcurrentConnectionThroughput(benchmark::State& state) {
             auto local_port = acceptor.local_endpoint().port();
             
             boost::system::error_code ec;
-            socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+            socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
             if (ec) {
                 return;
             }
@@ -288,7 +287,7 @@ static void BM_MixedPacketSizes(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;
@@ -330,7 +329,7 @@ static void BM_ZeroCopyForwarding(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;
@@ -372,7 +371,7 @@ static void BM_LatencyUnderLoad(benchmark::State& state) {
     auto local_port = acceptor.local_endpoint().port();
     
     boost::system::error_code ec;
-    socket.connect(asio::ip::tcp::endpoint(asio::ip::address::from_string("127.0.0.1"), local_port), ec);
+    socket.connect(asio::ip::tcp::endpoint(asio::ip::make_address("127.0.0.1"), local_port), ec);
     if (ec) {
         state.SkipWithError("Connection failed");
         return;

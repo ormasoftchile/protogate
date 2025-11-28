@@ -1,18 +1,128 @@
 #!/bin/bash
 
+################################################################################
+# TEARDOWN AZURE ENVIRONMENT
+################################################################################
 #
-# Teardown Test Environment
+# This script removes all Azure resources created for a specific environment.
 #
-# This script removes all Azure resources created for the test environment:
-# - Container Apps (server)
-# - Container Apps environment
-# - Key Vault
-# - DNS records
-# - Resource group (optional)
+# ⚠️  CRITICAL: This script REQUIRES the --env argument!
 #
-# Usage:
-#   ./scripts/teardown-test-env.sh [--keep-rg] [--keep-dns] [--dry-run]
+# ═══════════════════════════════════════════════════════════════════════════
+# BASIC USAGE (MOST COMMON)
+# ═══════════════════════════════════════════════════════════════════════════
 #
+#   # Teardown test environment (most common usage)
+#   ./scripts/teardown-test-env.sh --env test
+#
+#   # Teardown dev environment
+#   ./scripts/teardown-test-env.sh --env dev
+#
+#   # Teardown prod environment
+#   ./scripts/teardown-test-env.sh --env prod
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# WHAT GETS DELETED (by default)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   1. DNS Records (if --keep-dns NOT specified)
+#   2. Container App (protogate-{env}-server)
+#   3. Container Apps Environment (protogate-{env}-env)
+#   4. Key Vault (protogate-{env}-kv or pg-{env}-kv-*)
+#      ⚠️  SOFT-DELETED (recoverable for 90 days, NOT purged automatically)
+#   5. Resource Group (protogate-{env}-rg) - if --keep-rg NOT specified
+#      This deletes EVERYTHING inside including Log Analytics, ACR, etc.
+#   6. Local cached files (.keyvault-uri, .managed-identity, etc.)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# IMPORTANT: KEY VAULT SOFT-DELETE
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   Azure Key Vault has soft-delete enabled by default (90-day retention).
+#   This script DELETES the Key Vault but does NOT purge it.
+#
+#   To FULLY remove a Key Vault and allow immediate recreation:
+#
+#     az keyvault purge --name protogate-test-kv
+#
+#   Or wait for deletion to complete, then run:
+#
+#     az keyvault purge --name protogate-test-kv
+#     ./scripts/deploy-test-env.sh --env test
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# ADVANCED OPTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   --dry-run           Preview what would be deleted (SAFE, no actual changes)
+#   --keep-rg           Delete individual resources but keep Resource Group
+#   --keep-dns          Don't delete DNS records (useful if shared)
+#   --verbose, -v       Enable detailed logging
+#   --help, -h          Show full help message
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# EXAMPLES
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   # Preview what would be deleted (SAFE - no actual deletion)
+#   ./scripts/teardown-test-env.sh --env test --dry-run
+#
+#   # Delete test environment completely (most common)
+#   ./scripts/teardown-test-env.sh --env test
+#
+#   # Delete resources but keep Resource Group structure
+#   ./scripts/teardown-test-env.sh --env test --keep-rg
+#
+#   # Delete everything but keep DNS records (shared zone)
+#   ./scripts/teardown-test-env.sh --env test --keep-dns
+#
+#   # Verbose output for troubleshooting
+#   ./scripts/teardown-test-env.sh --env test --verbose
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# TYPICAL WORKFLOW (Clean Teardown + Redeploy)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   1. Teardown environment
+#      ./scripts/teardown-test-env.sh --env test
+#
+#   2. Wait for resource group deletion (check with):
+#      az group show --name protogate-test-rg --query "properties.provisioningState" -o tsv
+#      (Should return error "could not be found" when complete)
+#
+#   3. Purge soft-deleted Key Vault (CRITICAL for immediate redeploy)
+#      az keyvault purge --name protogate-test-kv
+#
+#   4. Deploy fresh environment
+#      ./scripts/deploy-test-env.sh --env test
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# TROUBLESHOOTING
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   Error: "command requires --env argument"
+#   Fix:   You MUST specify --env (test/dev/prod)
+#          ./scripts/teardown-test-env.sh --env test
+#
+#   Error: "Key Vault already exists in deleted state" (during redeploy)
+#   Fix:   Purge the soft-deleted Key Vault first:
+#          az keyvault purge --name protogate-test-kv
+#
+#   Error: "ResourceGroupBeingDeleted" (during redeploy)
+#   Fix:   Wait for deletion to complete before redeploying:
+#          az group show --name protogate-test-rg
+#          (Should return "could not be found" when ready)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# SAFETY FEATURES
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#   - Requires typing "DELETE" to confirm (unless --dry-run)
+#   - Shows exactly what will be deleted before confirmation
+#   - Supports --dry-run to preview changes without executing
+#   - Resource Group deletion runs async (--no-wait) to prevent hanging
+#
+################################################################################
 
 set -euo pipefail
 
@@ -130,7 +240,7 @@ case "$ENVIRONMENT" in
         RESOURCE_GROUP="protogate-test-rg"
         CONTAINER_APP_NAME="protogate-test-server"
         CONTAINER_ENV_NAME="protogate-test-env"
-        KEYVAULT_NAME="pg-test-kv-098f6b"
+        KEYVAULT_NAME="protogate-test-kv"
         DNS_ZONE="ormasoft.cl"
         DNS_PREFIX="test.tunnel"
         ;;
@@ -138,7 +248,7 @@ case "$ENVIRONMENT" in
         RESOURCE_GROUP="protogate-prod-rg"
         CONTAINER_APP_NAME="protogate-prod-server"
         CONTAINER_ENV_NAME="protogate-prod-env"
-        KEYVAULT_NAME="pg-prod-kv-098f6b"
+        KEYVAULT_NAME="protogate-prod-kv"
         DNS_ZONE="ormasoft.cl"
         DNS_PREFIX="tunnel"
         ;;
@@ -400,9 +510,37 @@ delete_resource_group() {
     fi
 }
 
+# Function: Purge soft-deleted Key Vault
+purge_keyvault() {
+    log_info "Step 6: Purging soft-deleted Key Vault"
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_warn "[DRY RUN] Would purge Key Vault: $KEYVAULT_NAME"
+        return 0
+    fi
+    
+    log_info "Checking for soft-deleted Key Vault: $KEYVAULT_NAME"
+    
+    # Check if Key Vault is in deleted state
+    if az keyvault list-deleted --query "[?name=='$KEYVAULT_NAME']" -o tsv 2>/dev/null | grep -q "$KEYVAULT_NAME"; then
+        log_info "Purging soft-deleted Key Vault: $KEYVAULT_NAME"
+        log_warn "This permanently deletes the Key Vault and all its contents"
+        
+        if az keyvault purge --name "$KEYVAULT_NAME" --output none 2>&1; then
+            log_success "Key Vault purged: $KEYVAULT_NAME"
+        else
+            log_warn "Failed to purge Key Vault (may need manual cleanup)"
+            log_info "Manual purge: az keyvault purge --name $KEYVAULT_NAME"
+            return 1
+        fi
+    else
+        log_info "Key Vault not in deleted state (already purged or never existed)"
+    fi
+}
+
 # Function: Clean up local files
 cleanup_local_files() {
-    log_info "Step 6: Cleaning up local files"
+    log_info "Step 7: Cleaning up local files"
     
     local files=(
         "$PROJECT_ROOT/azure/.keyvault-uri-${ENVIRONMENT}"
@@ -451,6 +589,7 @@ main() {
     delete_container_env || log_warn "Container Environment deletion had errors, continuing..."
     delete_keyvault || log_warn "Key Vault deletion had errors, continuing..."
     delete_resource_group || log_warn "Resource Group deletion had errors, continuing..."
+    purge_keyvault || log_warn "Key Vault purge had errors, continuing..."
     cleanup_local_files
     
     # Summary
