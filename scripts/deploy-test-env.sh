@@ -25,11 +25,14 @@ Options:
     --image-tag <tag>   Docker image tag (default: $IMAGE_TAG)
     --location <loc>    Azure region (default: $LOCATION)
     --keyvault-name <name>  Key Vault name (default: protogate-{env}-kv, auto-created)
+    --configure-dns     Configure custom DNS with Azure DNS zone (ormasoft.cl)
+    --dns-zone <zone>   DNS zone name (default: ormasoft.cl)
 
 Examples:
     $0 --env test
     $0 --env test --image-tag v1.0.0
     $0 --env prod --location eastus
+    $0 --env test --configure-dns
 EOF
     exit 1
 }
@@ -286,7 +289,7 @@ deploy_server_app() {
                 "PORT=8080" \
                 "AGENT_PORT=8443" \
                 "KEY_VAULT_URI=${KEYVAULT_URI}" \
-                "DNS_ZONE=tunnel.${ENVIRONMENT}.example.com" \
+                "DNS_ZONE=${ENVIRONMENT}.tunnel.ormasoft.cl" \
                 "LOG_LEVEL=INFO" \
             --output none || error_exit "Failed to create container app"
         
@@ -406,6 +409,116 @@ get_server_url() {
     fi
 }
 
+configure_dns() {
+    local app_name=$(get_server_app_name)
+    local rg=$(get_resource_group)
+    local dns_zone="${DNS_ZONE:-ormasoft.cl}"
+    local dns_resource_group="${DNS_RESOURCE_GROUP:-ormasoft}"
+    
+    log_info "Configuring DNS for custom domain..."
+    
+    if [ "$DRY_RUN" = true ]; then
+        log_info "[DRY RUN] Would configure DNS:"
+        log_info "  Zone: $dns_zone"
+        log_info "  Subdomain: ${ENVIRONMENT}.tunnel.$dns_zone"
+        return 0
+    fi
+    
+    # Verify DNS zone exists
+    if ! az network dns zone show --name "$dns_zone" --resource-group "$dns_resource_group" &>/dev/null; then
+        log_error "DNS zone '$dns_zone' not found in resource group '$dns_resource_group'"
+        log_info "Skipping DNS configuration. Server will use Azure-provided URL."
+        return 1
+    fi
+    
+    # Get container app FQDN
+    local app_fqdn=$(az containerapp show \
+        --name "$app_name" \
+        --resource-group "$rg" \
+        --query properties.configuration.ingress.fqdn \
+        -o tsv 2>/dev/null)
+    
+    if [ -z "$app_fqdn" ]; then
+        log_error "Failed to get container app FQDN"
+        return 1
+    fi
+    
+    log_info "Container App FQDN: $app_fqdn"
+    
+    # Determine subdomain based on environment
+    local subdomain="${ENVIRONMENT}.tunnel"
+    if [ "$ENVIRONMENT" = "prod" ]; then
+        subdomain="tunnel"
+    fi
+    
+    log_info "Creating CNAME record: ${subdomain}.$dns_zone -> $app_fqdn"
+    
+    # Create or update CNAME record for management API
+    az network dns record-set cname set-record \
+        --resource-group "$dns_resource_group" \
+        --zone-name "$dns_zone" \
+        --record-set-name "$subdomain" \
+        --cname "$app_fqdn" \
+        --ttl 300 \
+        --output none 2>/dev/null || \
+    az network dns record-set cname create \
+        --resource-group "$dns_resource_group" \
+        --zone-name "$dns_zone" \
+        --name "$subdomain" \
+        --ttl 300 \
+        --output none && \
+    az network dns record-set cname set-record \
+        --resource-group "$dns_resource_group" \
+        --zone-name "$dns_zone" \
+        --record-set-name "$subdomain" \
+        --cname "$app_fqdn" \
+        --output none
+    
+    log_success "CNAME record created: ${subdomain}.$dns_zone"
+    
+    # Create wildcard CNAME record for individual tunnels
+    log_info "Creating wildcard CNAME record: *.${subdomain}.$dns_zone -> $app_fqdn"
+    
+    az network dns record-set cname set-record \
+        --resource-group "$dns_resource_group" \
+        --zone-name "$dns_zone" \
+        --record-set-name "*.${subdomain}" \
+        --cname "$app_fqdn" \
+        --ttl 300 \
+        --output none 2>/dev/null || \
+    az network dns record-set cname create \
+        --resource-group "$dns_resource_group" \
+        --zone-name "$dns_zone" \
+        --name "*.${subdomain}" \
+        --ttl 300 \
+        --output none && \
+    az network dns record-set cname set-record \
+        --resource-group "$dns_resource_group" \
+        --zone-name "$dns_zone" \
+        --record-set-name "*.${subdomain}" \
+        --cname "$app_fqdn" \
+        --output none
+    
+    log_success "Wildcard CNAME record created: *.${subdomain}.$dns_zone"
+    
+    # Update DNS_ZONE environment variable in container app
+    log_info "Updating DNS_ZONE environment variable..."
+    az containerapp update \
+        --name "$app_name" \
+        --resource-group "$rg" \
+        --set-env-vars "DNS_ZONE=${subdomain}.${dns_zone}" \
+        --output none || log_warn "Failed to update DNS_ZONE environment variable"
+    
+    # Save custom domain URL
+    local custom_url="https://${subdomain}.${dns_zone}"
+    echo "$custom_url" > "$SCRIPT_DIR/../azure/.custom-url-${ENVIRONMENT}"
+    
+    log_success "DNS configuration complete!"
+    log_info "Management API: $custom_url"
+    log_info "Tunnel pattern: https://{tunnel-id}.${subdomain}.${dns_zone}"
+    log_info "Note: DNS propagation may take 5-10 minutes"
+}
+
 check_health() {
     local server_url=$1
     local max_attempts=30
@@ -468,6 +581,14 @@ main() {
                 KEYVAULT_NAME="$2"
                 shift 2
                 ;;
+            --configure-dns)
+                CONFIGURE_DNS=true
+                shift
+                ;;
+            --dns-zone)
+                DNS_ZONE="$2"
+                shift 2
+                ;;
             --dry-run|--json|--verbose|-v)
                 shift
                 ;;
@@ -514,12 +635,25 @@ main() {
         log_info "Server URL saved to: azure/.server-url-${ENVIRONMENT}"
     fi
     
+    # Configure DNS if requested
+    if [ "${CONFIGURE_DNS:-false}" = true ]; then
+        log_info ""
+        configure_dns || log_warn "DNS configuration failed, but deployment is still functional"
+    fi
+    
     # Summary
     log_info ""
     log_success "========================================="
     log_success "Deployment completed!"
     log_success "========================================="
     log_info "Server URL: $server_url"
+    
+    # Show custom URL if DNS was configured
+    if [ "${CONFIGURE_DNS:-false}" = true ] && [ -f "$SCRIPT_DIR/../azure/.custom-url-${ENVIRONMENT}" ]; then
+        local custom_url=$(cat "$SCRIPT_DIR/../azure/.custom-url-${ENVIRONMENT}")
+        log_info "Custom URL: $custom_url"
+    fi
+    
     log_info ""
     
     # Health check

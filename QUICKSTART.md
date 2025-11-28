@@ -63,6 +63,17 @@ This single command deploys everything: Resource Group, Container Registry, Key 
 ./scripts/deploy-test-env.sh --env test
 ```
 
+**With Custom DNS** (recommended for production-like setup):
+
+```bash
+./scripts/deploy-test-env.sh --env test --configure-dns
+```
+
+This will also configure:
+- Custom domain: `test.tunnel.ormasoft.cl`
+- Wildcard DNS: `*.test.tunnel.ormasoft.cl`
+- CNAME records in Azure DNS zone `ormasoft.cl`
+
 **What it does:**
 - Creates `protogate-test-rg` resource group
 - Creates `protogate-test-logs` Log Analytics workspace
@@ -322,31 +333,27 @@ Running test suite...
 ### Deploy Production
 
 ```bash
-# Deploy production environment
-./scripts/deploy-test-env.sh --env prod
+# Deploy production environment with custom DNS
+./scripts/deploy-test-env.sh --env prod --configure-dns
 
 # Expected resources created:
 # - Resource Group: protogate-prod-rg
 # - Key Vault: protogate-prod-kv
 # - Container Registry: protogateprodacr
 # - Container App: protogate-prod-server
+# - DNS Records: tunnel.ormasoft.cl + *.tunnel.ormasoft.cl
 ```
 
-### Configure DNS (Optional - Phase 7)
+**Without custom DNS** (uses Azure-provided URLs):
 
 ```bash
-# Configure custom domain with Let's Encrypt
-./scripts/configure-dns.sh \
-  --env prod \
-  --zone yourcompany.com \
-  --subdomain tunnel \
-  --letsencrypt \
-  --email admin@yourcompany.com
+./scripts/deploy-test-env.sh --env prod
+```
 
-# This creates:
-# - tunnel.yourcompany.com → Management API
-# - *.tunnel.yourcompany.com → Individual tunnels
-# - Let's Encrypt wildcard certificate
+**Custom domain with different DNS zone:**
+
+```bash
+./scripts/deploy-test-env.sh --env prod --configure-dns --dns-zone yourcompany.com
 ```
 
 ---
@@ -468,6 +475,20 @@ az containerapp show \
 ./scripts/deploy-test-env.sh --env test --image-tag v1.2.3
 ```
 
+### Deploy with Custom DNS
+
+```bash
+# Deploy with custom domain configuration
+./scripts/deploy-test-env.sh --env test --configure-dns
+
+# Use different DNS zone
+./scripts/deploy-test-env.sh --env test --configure-dns --dns-zone mycompany.com
+```
+
+This configures:
+- Test: `test.tunnel.ormasoft.cl` + `*.test.tunnel.ormasoft.cl`
+- Prod: `tunnel.ormasoft.cl` + `*.tunnel.ormasoft.cl`
+
 ### Custom Location
 
 ```bash
@@ -494,11 +515,11 @@ az containerapp show \
 ## Next Steps
 
 1. ✅ **Complete deployment** - Test environment working
-2. ⏭️ **Configure DNS** - Custom domains (optional)
+2. ✅ **Configure DNS** - Use `--configure-dns` flag during deployment
 3. ⏭️ **Setup monitoring** - Application Insights and alerts
-4. ⏭️ **Production deployment** - Deploy to prod environment
+4. ⏭️ **Production deployment** - Deploy to prod environment with DNS
 5. ⏭️ **Agent integration** - Deploy tunnel agents
-6. ⏭️ **Documentation** - Update external docs with URLs
+6. ⏭️ **TLS certificates** - Let's Encrypt for custom domains (future)
 
 ---
 
@@ -510,8 +531,14 @@ az containerapp show \
 # Deploy test environment
 ./scripts/deploy-test-env.sh --env test
 
+# Deploy with custom DNS
+./scripts/deploy-test-env.sh --env test --configure-dns
+
 # Verify deployment
 curl $(cat azure/.server-url-test)/health
+
+# Or use custom URL if DNS configured
+curl $(cat azure/.custom-url-test 2>/dev/null || cat azure/.server-url-test)/health
 
 # Run e2e tests
 ./scripts/e2e-test.sh --env test
@@ -522,7 +549,8 @@ curl $(cat azure/.server-url-test)/health
 
 ### Important Files
 
-- `azure/.server-url-test` - Test server URL
+- `azure/.server-url-test` - Test server URL (Azure-provided)
+- `azure/.custom-url-test` - Custom domain URL (if DNS configured)
 - `azure/.keyvault-uri-test` - Key Vault URI
 - `azure/.managed-identity-test` - Managed identity ID
 - `scripts/deploy-test-env.sh` - Deployment script
