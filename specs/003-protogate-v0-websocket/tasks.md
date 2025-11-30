@@ -20,19 +20,19 @@
 
 **Purpose**: Establish CMake build system, directory structure, and basic infrastructure
 
-- [ ] T001 Create directory structure: src/{server,agent,common}, include/protogate, tests, examples, cmake
-- [ ] T002 Create root CMakeLists.txt with C++20 standard, dependency finding (Boost, nlohmann_json, yaml-cpp, spdlog)
-- [ ] T003 Create src/server/CMakeLists.txt for protogate-server executable
-- [ ] T004 Create src/agent/CMakeLists.txt for protogate-agent executable
-- [ ] T005 Create src/common/CMakeLists.txt for shared library (protogate-common)
-- [ ] T006 [P] Create stub src/server/main.cpp with "Hello from server" message
-- [ ] T007 [P] Create stub src/agent/main.cpp with "Hello from agent" message
-- [ ] T008 [P] Create examples/server.yaml with example configuration (agent_port: 8080, tunnel_port: 9000, shared_secret, log_level)
-- [ ] T009 [P] Create examples/agent.yaml with example configuration (server_url, agent_id, shared_secret, tunnels, heartbeat_interval)
-- [ ] T010 Create README.md with build instructions, dependencies list, usage examples
-- [ ] T011 Test build: cmake -B build && cmake --build build (verify both executables compile)
+- [X] T001 Create directory structure: src/{server,agent,common}, include/protogate, tests, examples, cmake
+- [X] T002 Create root CMakeLists.txt with C++20 standard, dependency finding (Boost, nlohmann_json, yaml-cpp, spdlog)
+- [X] T003 Create src/server/CMakeLists.txt for protogate-server executable
+- [X] T004 Create src/agent/CMakeLists.txt for protogate-agent executable
+- [X] T005 Create src/common/CMakeLists.txt for shared library (protogate-common)
+- [X] T006 [P] Create stub src/server/main.cpp with "Hello from server" message
+- [X] T007 [P] Create stub src/agent/main.cpp with "Hello from agent" message
+- [X] T008 [P] Create examples/server.yaml with example configuration (agent_port: 8080, tunnel_port: 9000, shared_secret, log_level)
+- [X] T009 [P] Create examples/agent.yaml with example configuration (server_url, agent_id, shared_secret, tunnels, heartbeat_interval)
+- [X] T010 Create README.md with build instructions, dependencies list, usage examples
+- [X] T011 Test build: cmake -B build && cmake --build build (verify both executables compile)
 
-**Checkpoint**: Project structure created, build system works, stub executables run
+**Checkpoint**: ✅ Project structure created, build system works, stub executables run
 
 ---
 

@@ -1,0 +1,25 @@
+# ProtoGate Agent Configuration
+
+# WebSocket server URL (ws:// for local, wss:// for production with nginx)
+server_url: "ws://localhost:8080/agent"
+
+# Unique identifier for this agent
+agent_id: "test-agent-1"
+
+# Pre-shared secret for authentication
+# IMPORTANT: Must match server configuration!
+shared_secret: "CHANGE_ME_IN_PRODUCTION"
+
+# Logging configuration
+log_level: "info"  # debug, info, warn, error
+
+# Heartbeat interval (seconds)
+# Agent sends heartbeat to server at this interval
+heartbeat_interval: 30
+
+# Tunnel configurations
+# Each tunnel maps to a local service
+tunnels:
+  - id: "dev-app"
+    local_host: "127.0.0.1"
+    local_port: 3000

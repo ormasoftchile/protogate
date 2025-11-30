@@ -1,0 +1,19 @@
+# ProtoGate Server Configuration
+
+# WebSocket endpoint for agent connections
+agent_endpoint: "/agent"
+agent_port: 8080
+
+# TCP port for tunnel clients
+tunnel_port: 9000
+
+# Pre-shared secret for agent authentication
+# IMPORTANT: Change this in production!
+shared_secret: "CHANGE_ME_IN_PRODUCTION"
+
+# Logging configuration
+log_level: "info"  # debug, info, warn, error
+
+# Heartbeat timeout (seconds)
+# Agents are removed if no heartbeat received within this time
+heartbeat_timeout: 90
