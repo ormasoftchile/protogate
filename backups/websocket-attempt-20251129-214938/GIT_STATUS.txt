@@ -1,0 +1,49 @@
+# Git Status at Backup Time
+
+## Modified Files (M)
+- .vscode/settings.json
+- azure/.managed-identity-test
+- specs/001-azure-deployment-test/spec.md
+- specs/001-azure-deployment-test/tasks.md
+- src/api/tunnels_handler.cpp
+- src/api/tunnels_handler.h
+- src/server/agent_server.cpp
+- src/server/agent_server.h
+- src/server/http_server.cpp
+- src/server/http_server.h
+- src/server/main.cpp
+- tunnel-agent/CMakeLists.txt
+- tunnel-agent/config.json
+- tunnel-agent/src/client/http2_session.cpp
+- tunnel-agent/src/client/http2_session.h
+- tunnel-agent/src/main.cpp
+
+## New Files (??)
+- HANDS_ON_VERIFICATION.md
+- SPEC_CONSOLIDATION.md
+- backups/ (this directory)
+- specs/001-azure-deployment-test/AZURE_INGRESS_ANALYSIS.md
+- specs/001-azure-deployment-test/IMPLEMENTATION_SUMMARY.md
+- specs/001-azure-deployment-test/INTEGRATION_GAPS.md
+- test-integration-fix.sh
+- test-manual.sh
+- tunnel-agent/src/client/http_client.cpp
+- tunnel-agent/src/client/http_client.h
+
+## Key Changes Summary
+
+### Integration Work (T093-T098 Completed)
+- Added tunnel existence validation to agent handshake
+- Enhanced logging with tunnel details
+- Fixed agent registration flow
+
+### WebSocket Protocol Attempt (Failed)
+- Implemented WebSocket upgrade headers (agent + server)
+- Fixed header validation bug
+- Discovered protocol mismatch (HTTP/2 frames vs WebSocket framing)
+
+### Documentation
+- AZURE_INGRESS_ANALYSIS.md - Protocol investigation
+- INTEGRATION_GAPS.md - Integration issues found
+- HANDS_ON_VERIFICATION.md - Testing documentation
+- IMPLEMENTATION_SUMMARY.md - Work summary

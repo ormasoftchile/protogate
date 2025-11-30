@@ -1,0 +1,16 @@
+{
+  "server": {
+    "host": "protogate-test-server.whitesea-e4a76aae.westus2.azurecontainerapps.io",
+    "port": 443,
+    "verify_tls": true
+  },
+  "tunnel": {
+    "id": "debug-403",
+    "token": "tnl_16e7c5e85b917ec33d82f0b278e3f4d4138c0be4303e9d92435ea2bbf321c658"
+  },
+  "local": {
+    "url": "http://localhost:9999",
+    "timeout_seconds": 30
+  },
+  "log_level": "info"
+}
