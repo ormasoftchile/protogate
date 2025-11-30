@@ -36,20 +36,33 @@ Sync Impact Report:
 ### I. Security-First (NON-NEGOTIABLE)
 
 Security MUST be the foundational design constraint for all components. Every feature, protocol, and deployment 
-configuration MUST default to secure settings. Insecure options are prohibited unless explicitly justified 
-by enterprise requirements and documented with mitigation strategies.
+configuration MUST default to secure settings when feasible.
 
 **Non-negotiable requirements:**
-- TLS 1.2+ mandatory for all tunnel connections (outbound and inbound)
-- mTLS support MUST be implemented for high-security scenarios
 - Per-tunnel authentication tokens MUST be cryptographically secure (minimum 256-bit entropy)
-- All secrets (tokens, certificates, keys) MUST be stored in Azure Key Vault
-- IP allowlists and Azure Front Door WAF integration MUST be supported
 - No plaintext credentials in logs, configuration files, or environment variables
 - Security patches MUST be prioritized over feature development
+- All production deployments MUST document security configuration and risk assessment
 
-**Rationale**: Protogate handles sensitive enterprise traffic and replaces VPN infrastructure. A single security 
-vulnerability could expose customer networks. Security cannot be retrofitted—it must be foundational.
+**Transport security:**
+- TLS termination is delegated to reverse proxy layer (nginx, Azure Front Door, Azure Application Gateway)
+- Protogate components communicate via plain WebSocket (ws://) behind the proxy
+- Production deployments MUST use TLS at the proxy layer (wss:// to clients)
+- Internal component-to-component communication MAY use plain ws:// when within trusted network boundaries
+
+**Security best practices:**
+- Secrets SHOULD be stored in Azure Key Vault or equivalent secure storage
+- File-based secret storage MAY be used with restrictive permissions (0600)
+- IP allowlists and WAF integration SHOULD be configured at the reverse proxy layer
+- mTLS MAY be implemented at the reverse proxy layer for high-security scenarios
+
+**Rationale**: Modern cloud deployments delegate TLS termination to dedicated reverse proxies (nginx, load balancers) 
+rather than implementing it in application code. This architectural pattern:
+- Simplifies application code and reduces attack surface
+- Enables centralized certificate management and rotation
+- Allows TLS configuration updates without application changes
+- Supports standard practices for Azure Container Apps, AKS, and VM deployments
+- Maintains security through network isolation and proxy-layer protection
 
 ### II. Azure-Native Architecture
 
@@ -121,28 +134,30 @@ Observability MUST enable rapid troubleshooting and compliance auditing without 
 **Rationale**: Enterprises require compliance evidence and operational visibility. Silent failures are 
 unacceptable in production infrastructure.
 
-## Security Requirements
+### Security Requirements
 
 ### Authentication & Authorization
 - MUST support token-based authentication for tunnel agents
-- MUST support certificate-based authentication (mTLS) as an option
-- MUST implement role-based access control for management APIs
-- MUST integrate with Microsoft Entra ID for administrative access
-- Token rotation MUST be supported with zero-downtime
+- SHOULD support certificate-based authentication (mTLS) as an option for production
+- SHOULD implement role-based access control for management APIs
+- SHOULD integrate with Microsoft Entra ID for administrative access where applicable
+- Token rotation SHOULD be supported with zero-downtime
 
 ### Network Security
-- MUST support IP allowlisting at tunnel and server levels
-- MUST integrate with Azure Front Door Web Application Firewall
-- MUST enforce rate limiting to prevent abuse
-- MUST implement DDoS protection via Azure DDoS Protection Standard (recommended)
-- MUST support network isolation via Azure Virtual Networks
+- SHOULD support IP allowlisting at tunnel and server levels
+- SHOULD integrate with Azure Front Door Web Application Firewall for production deployments
+- MUST implement rate limiting to prevent abuse
+- SHOULD implement DDoS protection via Azure DDoS Protection Standard (recommended for production)
+- MAY support network isolation via Azure Virtual Networks
 
 ### Data Protection
-- Tunnel traffic MUST be encrypted in transit (TLS 1.2+)
-- Secrets MUST be encrypted at rest via Azure Key Vault
-- MUST support customer-managed encryption keys (BYOK)
+- Tunnel traffic MUST be encrypted in transit (TLS 1.2+) at the reverse proxy layer for production deployments
+- Protogate components communicate via ws:// behind the reverse proxy within trusted network boundaries
+- External clients MUST connect via wss:// through the reverse proxy (nginx, Azure Front Door)
+- Secrets SHOULD be encrypted at rest via Azure Key Vault (recommended) or file-based storage with restrictive permissions (0600)
+- SHOULD support customer-managed encryption keys (BYOK) for enterprise deployments
 - MUST NOT log sensitive data (credentials, tokens, payload content)
-- MUST provide configuration for GDPR/CCPA compliance (data residency, retention)
+- SHOULD provide configuration for GDPR/CCPA compliance (data residency, retention)
 
 ### Incident Response
 - MUST provide security event logging for forensic analysis
@@ -204,4 +219,29 @@ implementation plans, and code reviews MUST verify compliance with these princip
 - Cost vs. performance tradeoffs MUST favor meeting minimum performance requirements
 - Feature requests that violate core principles MUST be rejected or redesigned
 
-**Version**: 1.0.0 | **Ratified**: 2025-11-21 | **Last Amended**: 2025-11-21
+**Version**: 1.2.0 | **Ratified**: 2025-11-21 | **Last Amended**: 2025-11-29
+
+## Amendment History
+
+### v1.2.0 (2025-11-29)
+- **MINOR AMENDMENT**: Removed TLS implementation from Protogate application layer, delegated to reverse proxy
+- Architecture change: Protogate components use plain ws:// behind nginx/Azure Front Door
+- TLS termination now handled by reverse proxy layer (nginx, Azure Application Gateway, Azure Front Door)
+- Updated Principle I to reflect proxy-delegated TLS pattern
+- Updated Security Requirements to clarify internal vs external communication security
+- Rationale: Modern cloud architecture best practice - delegate TLS to specialized reverse proxy components
+- Impact: Simplifies Protogate codebase, centralizes certificate management, enables standard Azure deployment patterns
+
+### v1.1.0 (2025-11-29)
+- **MINOR AMENDMENT**: Modified Principle I (Security-First) to make TLS optional for development/testing
+- Changed TLS requirement from mandatory (MUST) to production-required (MUST for production, MAY for dev/test)
+- Changed Azure Key Vault from mandatory (MUST) to recommended (SHOULD)
+- Changed network security features from mandatory (MUST) to recommended (SHOULD) where appropriate
+- Updated Security Requirements section to distinguish production vs development requirements
+- Rationale: Enable flexible development workflows while maintaining production security standards
+- Impact: Specifications for v0 development can proceed with optional TLS, must document production hardening requirements
+
+### v1.0.0 (2025-11-21)
+- Initial constitution ratified
+- Established 5 core principles: Security-First, Azure-Native, Self-Hosting Control, Performance & Cost Efficiency, Observability & Auditability
+- Defined governance process and compliance verification requirements
